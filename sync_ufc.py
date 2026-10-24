@@ -958,8 +958,9 @@ def send_fight_alert(fight_id, title_ar, body_ar, title_en, body_en, bell=False)
 
 def check_fight_alerts(ref, doc):
     """Bell alerts for every fight, prelims and early prelims too. Each fight
-    gets one "walkouts" alarm, a short note at the start of each round after
-    the first, and one "result" alert (saved in fightAlertsSent).
+    gets one "walkouts" alarm, a "fight started" note when round 1 begins, a
+    short note at the start of each later round, and one "result" alert
+    (saved in fightAlertsSent).
     Walkouts = the fight before it just ended (the first fight: the event
     start time), or BALLDONTLIE already says it's live.
     The main event result already goes to everyone, so it's skipped here."""
@@ -987,21 +988,24 @@ def check_fight_alerts(ref, doc):
         a_ar, b_ar = f.get("fighterAAr") or a, f.get("fighterBAr") or b
         prev = fights[i + 1] if i + 1 < len(fights) else None
 
-        if not f.get("winner") and f"start:{fid}" not in sent and now <= start + timedelta(hours=8):
-            if fid in _bdl_live:
-                send_fight_alert(fid, f"🔴 بدأ الآن: {a_ar} ضد {b_ar}", name_ar,
-                                 f"🔴 Live now: {a} vs {b}", name_en, bell=True)
-                sent.add(f"start:{fid}")
-            elif (prev and prev.get("winner")) or (not prev and now >= start - timedelta(minutes=5)):
+        live_now = not f.get("winner") and fid in _bdl_live
+        if not f.get("winner") and f"start:{fid}" not in sent and not live_now and now <= start + timedelta(hours=8):
+            if (prev and prev.get("winner")) or (not prev and now >= start - timedelta(minutes=5)):
                 send_fight_alert(fid, f"🔔 دخول المقاتلين الآن: {a_ar} ضد {b_ar}", f"النزال يبدأ خلال دقائق · {name_ar}",
                                  f"🔔 Walkouts now: {a} vs {b}", f"The fight starts in a few minutes · {name_en}", bell=True)
                 sent.add(f"start:{fid}")
 
+        # Second note when the fight itself begins (round 1). If the walkout
+        # alarm was never sent, this one rings the bell instead.
         rnd = _bdl_round.get(fid, 0)
-        if not f.get("winner") and fid in _bdl_live and rnd >= 2 and f"round:{fid}:{rnd}" not in sent:
+        if live_now and f"live:{fid}" not in sent:
+            send_fight_alert(fid, f"🔴 بدأ النزال: {a_ar} ضد {b_ar}", name_ar,
+                             f"🔴 Fight started: {a} vs {b}", name_en, bell=f"start:{fid}" not in sent)
+            sent.update({f"live:{fid}", f"start:{fid}"} | {f"round:{fid}:{r}" for r in range(2, rnd + 1)})
+        elif live_now and rnd >= 2 and f"round:{fid}:{rnd}" not in sent:
             send_fight_alert(fid, f"⏱️ الجولة {rnd} بدأت: {a_ar} ضد {b_ar}", name_ar,
                              f"⏱️ Round {rnd} underway: {a} vs {b}", name_en)
-            sent.update({f"start:{fid}"} | {f"round:{fid}:{r}" for r in range(2, rnd + 1)})
+            sent.update({f"round:{fid}:{r}" for r in range(2, rnd + 1)})
 
         if f.get("winner") and f is not main and f"result:{fid}" not in sent:
             w = f["winner"]
@@ -1016,7 +1020,7 @@ def check_fight_alerts(ref, doc):
             send_fight_alert(fid, f"🏆 نتيجة النزال · {name_ar}", body_ar,
                              f"🏆 Fight result · {name_en}", body_en)
             sent.add(f"result:{fid}")
-            sent.add(f"start:{fid}")  # finished: never send "starting" afterwards
+            sent.update({f"start:{fid}", f"live:{fid}"})  # finished: never send "starting" afterwards
 
         if len(sent) != before:  # save after each fight, so a failure can't cause repeats
             ref.set({"fightAlertsSent": sorted(sent)}, merge=True)
