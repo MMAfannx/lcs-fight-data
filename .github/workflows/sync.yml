@@ -1,0 +1,36 @@
+name: Sync UFC data
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"         # full check every 2 hours
+    - cron: "*/10 14-23 * * 6"    # fight nights: every 10 minutes, Saturday 14:00-24:00 UTC (Abu Dhabi/Europe cards start earlier)
+    - cron: "*/10 0-8 * * 0"      # ...and Sunday 00:00-09:00 UTC
+  workflow_dispatch:              # run by hand from GitHub
+    inputs:
+      mode:
+        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now"
+        default: "full"
+        type: choice
+        options: [full, backfill, fighters, quiz]
+      from_year:
+        description: "Backfill: import events from this year onward"
+        default: "2024"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    concurrency: ufc-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python sync_ufc.py
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
+          SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '0 */2 * * *' && 'full' || 'fightnight') }}
+          BACKFILL_FROM_YEAR: ${{ inputs.from_year || '2024' }}
