@@ -1935,7 +1935,8 @@ def sync_quiz(db, force=False):
     day = quiz_day()
     did = day.isoformat()
     current = db.collection("quizzes").document("current").get()
-    if not force and current.exists and (current.to_dict() or {}).get("weekId") == did:
+    already = current.exists and (current.to_dict() or {}).get("weekId") == did
+    if already and not force:
         return
     rng = random.Random(did)
     auto = build_quiz(db, rng)
@@ -1967,7 +1968,7 @@ def sync_quiz(db, force=False):
     db.collection("quizzes").document(did).set(doc)
     db.collection("quizzes").document("current").set(doc)
     print(f"Quiz: {len(picked)} questions for {did}")
-    if day.weekday() == 0:  # Mondays only: one gentle reminder a week
+    if day.weekday() == 0 and not already:  # Mondays only, once: one gentle reminder a week
         try:
             send_alert("🧠 كويز اليوم جاهز!", "3 أسئلة في 30 ثانية · حافظ على سلسلتك 🔥",
                        "🧠 Today's quiz is ready!", "3 questions in 30 seconds · keep your streak 🔥")
