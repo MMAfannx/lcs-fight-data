@@ -1908,8 +1908,10 @@ QUIZ_START = datetime(2026, 10, 27).date()  # day 0 of the history question orde
 
 
 def quiz_day(now=None):
-    """The quiz day in Arab time (UTC+3), e.g. '2026-10-27'."""
-    return ((now or datetime.now(timezone.utc)) + timedelta(hours=3)).date()
+    """The quiz day as seen in the Gulf (UTC+3), where the new quiz arrives at
+    18:00, e.g. '2026-10-27'. Phones pick the quiz by their own local time
+    (also at 18:00), so 'current' carries yesterday's and tomorrow's quiz too."""
+    return ((now or datetime.now(timezone.utc)) + timedelta(hours=3 + 6)).date()
 
 
 def history_question(day, rng, extra=0):
@@ -1927,10 +1929,10 @@ def history_question(day, rng, extra=0):
 
 
 def quiz_reminder(db, did):
-    """One gentle reminder a week: Monday evening Arab time (18:00-22:59, UTC+3),
-    never at midnight when the new quiz is made, never twice."""
+    """One gentle reminder a week: Monday 20:00-22:59 Gulf time (18:00-20:59 in
+    Morocco), after the new quiz has arrived everywhere in the Arab world; never twice."""
     local = datetime.now(timezone.utc) + timedelta(hours=3)
-    if local.weekday() != 0 or not 18 <= local.hour <= 22:
+    if local.weekday() != 0 or not 20 <= local.hour <= 22:
         return
     ref = db.collection("meta").document("quizReminder")
     snap = ref.get()
@@ -1944,28 +1946,24 @@ def quiz_reminder(db, did):
         print(f"  quiz alert failed: {e}")
 
 
-def sync_quiz(db, force=False):
-    """A new 3-question quiz every day: 1 UFC history question + 1 about the
-    latest events + 1 about champions/nicknames/legends. Saved with the day
-    in 'weekId' (the app's streak counts consecutive quiz periods, so older
-    app versions keep working and count days). No daily notification: only
-    a reminder on Mondays."""
-    day = quiz_day()
+def make_quiz(db, day):
+    """The 3-question quiz of one day (1 UFC history question + 1 about the
+    latest events + 1 about champions/nicknames/legends), made once and kept:
+    fans may already have played it."""
     did = day.isoformat()
-    current = db.collection("quizzes").document("current").get()
-    already = current.exists and (current.to_dict() or {}).get("weekId") == did
-    if already and not force:
-        quiz_reminder(db, did)
-        return
+    ref = db.collection("quizzes").document(did)
+    snap = ref.get()
+    if snap.exists and (snap.to_dict() or {}).get("questions"):
+        return snap.to_dict()
     rng = random.Random(did)
     auto = build_quiz(db, rng)
-    # Questions used in the last 7 days aren't repeated.
+    # Questions used in the 7 days before aren't repeated.
     used = set()
     for k in range(1, 8):
         old = db.collection("quizzes").document((day - timedelta(days=k)).isoformat()).get()
         for q in (old.to_dict() or {}).get("questions", []) if old.exists else []:
             used.add(q.get("q_en"))
-    # History questions: today's, then spares (none used in the last 7 days).
+    # History questions: the day's own, then spares (none used in the last 7 days).
     history = []
     for extra in range(0, 30):
         q = history_question(day, rng, extra)
@@ -1984,9 +1982,32 @@ def sync_quiz(db, force=False):
     picked = [q for q in picked if q]
     doc = {"weekId": did, "prevWeekId": (day - timedelta(days=1)).isoformat(), "daily": True,
            "questions": picked, "created": datetime.now(timezone.utc)}
-    db.collection("quizzes").document(did).set(doc)
-    db.collection("quizzes").document("current").set(doc)
+    ref.set(doc)
     print(f"Quiz: {len(picked)} questions for {did}")
+    return doc
+
+
+def sync_quiz(db, force=False):
+    """A new quiz every day at 18:00 local time in each country. The bot keeps
+    tomorrow's quiz ready; 'current' (the one document phones listen to) holds
+    today's quiz in the Gulf (read as-is by older app versions) plus
+    'prevQuiz' and 'nextQuiz', and the phone picks the one for its own clock.
+    It changes once a day. No daily notification: only a reminder on Mondays."""
+    day = quiz_day()
+    did = day.isoformat()
+    current = db.collection("quizzes").document("current").get()
+    cur = (current.to_dict() or {}) if current.exists else {}
+    if force or cur.get("weekId") != did or (cur.get("nextQuiz") or {}).get("weekId") != (day + timedelta(days=1)).isoformat():
+        today = make_quiz(db, day)
+        nxt = make_quiz(db, day + timedelta(days=1))
+        prev = db.collection("quizzes").document((day - timedelta(days=1)).isoformat()).get()
+        slim = lambda d: {"weekId": d["weekId"], "prevWeekId": d["prevWeekId"], "questions": d["questions"]}
+        doc = dict(today)
+        doc["nextQuiz"] = slim(nxt)
+        if prev.exists and (prev.to_dict() or {}).get("questions"):
+            doc["prevQuiz"] = slim(prev.to_dict())
+        db.collection("quizzes").document("current").set(doc)
+        print(f"Quiz current: {did} (+ prev/next)")
     quiz_reminder(db, did)
 
 
