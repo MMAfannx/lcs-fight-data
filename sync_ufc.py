@@ -1326,6 +1326,9 @@ def sync_fighters(db, with_records=False):
 
     existing = {s.id: (s.to_dict() or {}) for s in db.collection("fighters").stream()}
     batch, count, written, seen = db.batch(), 0, 0, set()
+    # One small document with every photo, so event syncs can put photos on
+    # fights (Results tab) with a single read instead of one per fighter.
+    photo_map = {fid: d["photo"] for fid, d in existing.items() if d.get("photo")}
     for f in roster:
         fid = fighter_key(f["name"])
         seen.add(fid)
@@ -1352,6 +1355,8 @@ def sync_fighters(db, with_records=False):
                "active": True}
         # Free photo (link + credit) if Wikipedia has one; keep the old one otherwise.
         doc["photo"] = photos.get(link) or old.get("photo") or None
+        if doc["photo"]:
+            photo_map[fid] = doc["photo"]
         doc["searchTerms"] = search_terms(f["name"] + " " + doc["nameAr"], [])
         if any(old.get(k) != v for k, v in doc.items()):
             batch.set(db.collection("fighters").document(fid), doc, merge=True)
@@ -1366,6 +1371,34 @@ def sync_fighters(db, with_records=False):
             count += 1
     batch.commit()
     print(f"Fighters: {written} profiles updated")
+    try:
+        db.collection("meta").document("fighterPhotos").set({"photos": photo_map})
+        print(f"Fighters: photo list saved ({len(photo_map)} photos)")
+    except Exception as e:
+        print(f"Fighters: photo list skipped: {e}")
+
+
+def load_photo_map(db):
+    """{fighterId: photo} saved by sync_fighters; {} if missing."""
+    try:
+        snap = db.collection("meta").document("fighterPhotos").get()
+        return (snap.to_dict() or {}).get("photos", {}) if snap.exists else {}
+    except Exception as e:
+        print(f"Photo list not loaded: {e}")
+        return {}
+
+
+def attach_photos(fights, photo_map):
+    """Puts each fighter's free photo (link + credit) on the fight, for the
+    Results tab. Fighters without a free photo get none (the app shows initials)."""
+    for f in fights:
+        for side in ("A", "B"):
+            photo = photo_map.get(f.get(f"fighter{side}Id") or "")
+            if photo:
+                f[f"photo{side}"] = photo
+            else:
+                f.pop(f"photo{side}", None)
+    return fights
 
 
 # ------------------------------------------------------------------- legends
@@ -2287,6 +2320,7 @@ def main():
     if db is None:
         print("No FIREBASE_SERVICE_ACCOUNT set: dry run, nothing is saved.")
 
+    photo_map = load_photo_map(db) if db is not None else {}
     scored_any = False
     live = []  # events happening now, for live_watch
     for ev in events:
@@ -2318,6 +2352,13 @@ def main():
                 if not f.get("winner") and f.get("id") in prev else f
                 for f in fights
             ]
+            # Keep highlight clips found earlier (Wikipedia doesn't have them).
+            clips = {f.get("id"): f["clip"] for f in old["fights"] if f.get("clip")}
+            for f in fights:
+                if f.get("id") in clips and not f.get("clip"):
+                    f["clip"] = clips[f["id"]]
+        if photo_map:
+            attach_photos(fights, photo_map)
         new = {
             "name": ev["name"],
             "nameAr": event_name_ar(ev["name"], fights),
@@ -2331,6 +2372,8 @@ def main():
             new["start"] = start
         if old.get("fightsLocked"):
             new["fights"] = merge_fights(old.get("fights", []), fights)
+            if photo_map:
+                attach_photos(new["fights"], photo_map)
         elif fights or not old.get("fights"):
             new["fights"] = fights
 
