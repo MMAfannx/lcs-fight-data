@@ -2390,19 +2390,51 @@ def _yt_recent():
     return out
 
 
+# Posts from before or around the fight, not the fight itself: arrivals,
+# walkouts, faceoffs, interviews... (matched on the letters-only text).
+_CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warmingup", "backstage",
+                   "lockerroom", "faceoff", "staredown", "weighin", "weighs", "mediaday", "pressconference",
+                   "presser", "countdown", "embedded", "preview", "fightweek", "workout", "whowins",
+                   "whowillwin", "whosgot", "prediction", "predict", "makeyourpick", "yourpicks", "isofficial",
+                   "booked", "announce", "comingup", "upnext", "livenow", "getready", "buildup", "trailer",
+                   "interview", "postfight", "prefight", "reaction", "reacts", "callsout", "callout",
+                   "behindthescenes", "entrance", "hotel", "airport", "landed", "fanfest", "autograph",
+                   "photoshoot", "mediascrum", "scrum", "ceremonial", "openworkout", "sparring", "training")
+# Words that show the post is about the fight's action or result.
+_CLIP_FIGHT = ("knockout", "knocks", "knocked", "tko", "submission", "submits", "submitted", "finish",
+               "highlight", "decision", "defeat", "beats", "victory", "andstill", "andnew", "newchamp",
+               "retains", "wins", "thewin", "fullfight", "freefight", "nocaut", "finaliza", "mejoresmomentos",
+               "melhoresmomentos", "peleacompleta", "lutacompleta", "flatline", "slept", "lightsout", "choke",
+               "armbar", "stoppage", "stops", "putsaway", "dropped", "drops", "elbows", "spinning")
+
+
+def _clip_text_ok(letters, platform):
+    """False for arrivals, walkouts, interviews... Instagram posts must also
+    show the fight itself (a finish/result word): UFC posts many videos of
+    both fighters on fight day that aren't the fight."""
+    if any(w in letters for w in _CLIP_NOT_FIGHT):
+        return False
+    return platform != "instagram" or any(w in letters for w in _CLIP_FIGHT)
+
+
 def _best_clip(fight, start, posts, until):
     """The post that is clearly about this fight, or None.
     Both fighters named = match. On Instagram, a Reel naming only the winner
-    also matches (UFC often captions finish clips with just the winner)."""
+    also matches (UFC often captions finish clips with just the winner).
+    Instagram must be a video, and never arrivals/walkouts/interviews."""
     best = None
     for p in posts:
         if not (start - timedelta(hours=1) <= p["at"] <= until):
             continue
+        if p["source"] == "instagram" and not p["video"]:
+            continue
+        if not _clip_text_ok(p["text"], p["source"]):
+            continue
         a, b = _mentions(p["text"], fight.get("fighterA", "")), _mentions(p["text"], fight.get("fighterB", ""))
         winner = fight.get("winner", "")
         if a and b:
-            score = 3 if p["video"] else 2
-        elif not p.get("both_required") and p["video"] and winner and (
+            score = 3
+        elif not p.get("both_required") and winner and (
                 (a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))):
             score = 1
         else:
@@ -2721,6 +2753,8 @@ def clip_match(a, b, when, until, index, winner="", platform="youtube"):
         if platform == "instagram" and not e["video"]:
             continue
         letters = e["letters"]
+        if not _clip_text_ok(letters, platform):
+            continue
         ma, mb = _mentions(letters, a), _mentions(letters, b)
         score = _yt_score(letters)
         if ma and mb:
@@ -2960,6 +2994,53 @@ def yt_clips_for_fighters(db, index):
           + (f" ({100 * rows_with // rows_all}%)" if rows_all else ""))
 
 
+def _purge_rows(rows, is_bad):
+    """Removes the clips is_bad(clip) rejects from fights / last-5 rows. True if changed."""
+    changed = False
+    for r in rows:
+        clips = _clip_list(r)
+        keep = [c for c in clips if not is_bad(c)]
+        if len(keep) != len(clips):
+            changed = True
+            r.pop("clip", None)
+            r.pop("clips", None)
+            if keep:
+                r["clip"], r["clips"] = keep[0], keep
+    return changed
+
+
+def purge_bad_clips(db, index):
+    """Rechecks every saved clip against the current rules (via its text in the
+    index) and removes the ones that aren't the fight (arrivals, walkouts...)."""
+    text = {e["url"]: (e["letters"], e["platform"], e["video"]) for e in index}
+    bad = {u for u, (letters, platform, video) in text.items()
+           if not _clip_text_ok(letters, platform) or (platform == "instagram" and not video)}
+    # The Instagram index keeps only videos: an Instagram clip from a time the
+    # index covers but that isn't in it was a photo (or was deleted).
+    ig_from = min((e["at"] for e in index if e["platform"] == "instagram"), default=None)
+
+    def is_bad(c):
+        url = c.get("url", "")
+        if url in bad:
+            return True
+        at = c.get("at")
+        return bool(c.get("source") == "instagram" and url not in text and ig_from and isinstance(at, datetime)
+                    and at >= ig_from)
+
+    removed = 0
+    for snap in db.collection("events").stream():
+        fights = [dict(f) for f in (snap.to_dict() or {}).get("fights") or []]
+        before = sum(len(_clip_list(f)) for f in fights)
+        if _purge_rows(fights, is_bad):
+            snap.reference.set({"fights": fights}, merge=True)
+            removed += before - sum(len(_clip_list(f)) for f in fights)
+    for snap in db.collection("fighters").stream():
+        recent = [dict(r) for r in (snap.to_dict() or {}).get("recent") or []]
+        if _purge_rows(recent, is_bad):
+            snap.reference.set({"recent": recent}, merge=True)
+    print(f"Clips recheck: removed {removed} clip(s) that weren't the fight itself")
+
+
 def yt_clips(db, full=False, fighters=False):
     """Update the YouTube + Instagram indexes, then fill clips on events
     (and fighters' last 5)."""
@@ -2976,6 +3057,11 @@ def yt_clips(db, full=False, fighters=False):
     print(f"Official clips: {yt} YouTube and {len(index) - yt} Instagram videos in the index")
     if not index:
         return
+    if full or fighters:  # the backfill and the twice-a-day run recheck old clips
+        try:
+            purge_bad_clips(db, index)
+        except Exception as e:
+            print(f"Clips recheck failed: {type(e).__name__}")
     yt_clips_for_events(db, index)
     if fighters:
         yt_clips_for_fighters(db, index)
