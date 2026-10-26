@@ -672,7 +672,7 @@ def fighter_photos(titles, width=400):
     for title, cat in sorted(cats.items()):
         if title in files:
             continue
-        last = _letters((strip_title(title).split() or [""])[-1])
+        last = _letters((re.sub(r"\s*\(.*?\)", "", title).split() or [""])[-1])  # "Jon Jones (fighter)" -> jones
         if len(last) < 3:
             continue
         params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:" + cat,
