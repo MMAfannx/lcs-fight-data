@@ -1014,7 +1014,14 @@ def check_fight_alerts(ref, doc):
             continue
         a, b = f.get("fighterA", ""), f.get("fighterB", "")
         a_ar, b_ar = f.get("fighterAAr") or a, f.get("fighterBAr") or b
-        prev = fights[i + 1] if i + 1 < len(fights) else None
+        if fid in _bdl_cancelled:
+            continue  # dropped from the card during the night: no alerts for it
+        # The fight before it on the card, skipping fights cancelled during the
+        # night (otherwise the walkout alarm would wait forever for their result).
+        j = i + 1
+        while j < len(fights) and fights[j].get("id") in _bdl_cancelled:
+            j += 1
+        prev = fights[j] if j < len(fights) else None
 
         live_now = not f.get("winner") and fid in _bdl_live
         if not f.get("winner") and f"start:{fid}" not in sent and not live_now and now <= start + timedelta(hours=8):
@@ -2231,6 +2238,7 @@ BDL_BASE = "https://api.balldontlie.io/mma/v1"
 _bdl_cache = {}
 _bdl_event_ids = {}  # event day -> BALLDONTLIE UFC event ids (fetched once per run)
 _bdl_live = set()  # our fight ids that BALLDONTLIE says are happening right now
+_bdl_cancelled = set()  # our fight ids BALLDONTLIE marks cancelled/postponed (dropped during the night)
 _bdl_round = {}  # our fight id -> round in progress, when BALLDONTLIE gives it
 _bdl_logged = set()
 
@@ -2340,6 +2348,10 @@ def bdl_fill_results(start, fights):
         if not f.get("winner"):
             a, b_ = f.get("fighterA", ""), f.get("fighterB", "")
             bout = by_pair.get(_bdl_pair(a, b_)) or by_last.get("|".join(sorted([_bdl_last(a), _bdl_last(b_)])))
+            status = " ".join(str(bout.get(k) or "") for k in ("status_state", "status", "status_detail",
+                                                                "status_description")).lower() if bout else ""
+            if bout and re.search(r"cancel|postpon|scratch|called off|removed", status):
+                _bdl_cancelled.add(f.get("id"))
             if bout and (bout.get("status_state") or "").lower() in ("in", "live", "in_progress", "inprogress"):
                 _bdl_live.add(f.get("id"))
                 rnd = _bdl_current_round(bout)
@@ -2392,6 +2404,7 @@ def live_watch(active):
         rounds += 1
         _bdl_cache.clear()
         _bdl_live.clear()
+        _bdl_cancelled.clear()
         still = []
         for ref, start in active:
             try:
