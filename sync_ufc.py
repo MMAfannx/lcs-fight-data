@@ -1936,6 +1936,12 @@ def method_kind(method):
     return kind, int(m.group(1)) if m else 0
 
 
+def season_of(start):
+    """Monthly leaderboard season of an event, e.g. '2026-11'. Uses the
+    event's own day (US Saturday-night cards end after midnight UTC)."""
+    return (start - timedelta(hours=8)).strftime("%Y-%m")
+
+
 def score_event(db, ref, event_id, doc):
     from firebase_admin import firestore
     fights = doc.get("fights") or []
@@ -1990,6 +1996,10 @@ def score_event(db, ref, event_id, doc):
             "trackedCorrect": firestore.Increment(correct),
             "methodHits": firestore.Increment(method_hits),
             "roundHits": firestore.Increment(round_hits),
+            # Monthly season (leaderboard tab: this month / each past month).
+            "months": {season_of(doc["start"]): {"points": firestore.Increment(points),
+                                                 "correct": firestore.Increment(correct),
+                                                 "events": firestore.Increment(1)}},
         }, merge=True)
         players += 1
         count += 2
@@ -2031,10 +2041,45 @@ def clean_nickname(raw):
     return name
 
 
+def backfill_seasons(db, scores):
+    """Once: monthly totals for events scored before seasons existed, rebuilt
+    exactly from each player's scored picks (safe to run again)."""
+    flag = db.collection("meta").document("seasons")
+    snap = flag.get()
+    if snap.exists and (snap.to_dict() or {}).get("backfilled"):
+        return
+    starts = {s.id: (s.to_dict() or {}).get("start") for s in db.collection("events").stream()}
+    months = {}
+    for p in db.collection("picks").stream():
+        d = p.to_dict() or {}
+        res, start = d.get("result"), starts.get(d.get("eventId"))
+        if not isinstance(res, dict) or not d.get("uid") or not start:
+            continue
+        m = months.setdefault(d["uid"], {}).setdefault(season_of(start), {"points": 0, "correct": 0, "events": 0})
+        m["points"] += int(res.get("points") or 0)
+        m["correct"] += int(res.get("correct") or 0)
+        m["events"] += 1
+    batch, count = db.batch(), 0
+    for uid, ms in months.items():
+        batch.set(db.collection("scores").document(uid), {"months": ms}, merge=True)
+        scores.setdefault(uid, {})["months"] = ms
+        count += 1
+        if count % 400 == 0:
+            batch.commit()
+            batch = db.batch()
+    batch.commit()
+    flag.set({"backfilled": True}, merge=True)
+    print(f"Seasons: monthly totals rebuilt for {len(months)} player(s)")
+
+
 def build_leaderboard(db):
     scores = {s.id: (s.to_dict() or {}) for s in db.collection("scores").stream()}
     if not scores:
         return
+    try:
+        backfill_seasons(db, scores)
+    except Exception as e:
+        print(f"Seasons backfill failed: {type(e).__name__}")
     nicknames = {s.id: (s.to_dict() or {}).get("nickname", "") for s in db.collection("profiles").stream()}
 
     def num(d, k):
@@ -2062,10 +2107,28 @@ def build_leaderboard(db):
             if count >= 400:
                 batch.commit()
                 batch, count = db.batch(), 0
+    # Monthly seasons: one public list per month (leaderboard/m_2026-11).
+    season_keys = sorted({k for sc in scores.values() for k in (sc.get("months") or {})}, reverse=True)
+    for key in season_keys:
+        rows = [(uid, (sc.get("months") or {}).get(key) or {}) for uid, sc in scores.items()]
+        rows = [(uid, m) for uid, m in rows if m]
+        rows.sort(key=lambda r: (-num(r[1], "points"), -num(r[1], "correct")))
+        mtop, mprev, mrank, mused = [], None, 0, set()
+        for i, (uid, m) in enumerate(rows, start=1):
+            k = (num(m, "points"), num(m, "correct"))
+            if k != mprev:
+                mrank, mprev = i, k
+            nick = clean_nickname(nicknames.get(uid, ""))
+            if nick and nick.lower() not in mused and len(mtop) < 5000:
+                mused.add(nick.lower())
+                mtop.append({"rank": mrank, "nickname": nick, "points": k[0], "correct": k[1],
+                             "events": num(m, "events")})
+        batch.set(db.collection("leaderboard").document(f"m_{key}"),
+                  {"top": mtop, "players": len(rows), "month": key, "updated": datetime.now(timezone.utc)})
     batch.set(db.collection("leaderboard").document("current"),
-              {"top": top, "players": len(ranked), "updated": datetime.now(timezone.utc)})
+              {"top": top, "players": len(ranked), "months": season_keys, "updated": datetime.now(timezone.utc)})
     batch.commit()
-    print(f"Leaderboard: {len(top)} shown of {len(ranked)} players")
+    print(f"Leaderboard: {len(top)} shown of {len(ranked)} players; seasons: {', '.join(season_keys) or 'none'}")
 
 
 # ----------------------------------------------------------------- Firebase
