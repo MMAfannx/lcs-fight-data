@@ -868,12 +868,18 @@ def method_ar(method):
     return " · ".join(p for p in parts if p)
 
 
+def _ios_sound():
+    from firebase_admin import messaging
+    return messaging.APNSConfig(payload=messaging.APNSPayload(aps=messaging.Aps(sound="default")))
+
+
 def send_alert(title_ar, body_ar, title_en, body_en):
     from firebase_admin import messaging
     for topic, title, body in (("general_ar", title_ar, body_ar), ("general_en", title_en, body_en)):
         messaging.send(messaging.Message(
             topic=topic,
             notification=messaging.Notification(title=title, body=body),
+            apns=_ios_sound(),  # iPhone: play a sound (without this it arrives silently)
             android=messaging.AndroidConfig(
                 priority="high",
                 notification=messaging.AndroidNotification(channel_id="general_alerts"),
@@ -940,6 +946,7 @@ def send_fight_alert(fight_id, title_ar, body_ar, title_en, body_en, bell=False)
         messaging.send(messaging.Message(
             condition=f"'fight_{fight_id}' in topics && 'general_{lang}' in topics",
             notification=messaging.Notification(title=title, body=body),
+            apns=_ios_sound(),  # iPhone: play a sound (without this it arrives silently)
             android=messaging.AndroidConfig(
                 priority="high",
                 notification=messaging.AndroidNotification(
@@ -1087,6 +1094,7 @@ def send_fighter_alert(fighter_id, title_ar, body_ar, title_en, body_en):
         messaging.send(messaging.Message(
             topic=f"fighter_{fighter_id}_{lang}",
             notification=messaging.Notification(title=title, body=body),
+            apns=_ios_sound(),  # iPhone: play a sound (without this it arrives silently)
             android=messaging.AndroidConfig(
                 priority="high",
                 notification=messaging.AndroidNotification(channel_id="general_alerts"),
