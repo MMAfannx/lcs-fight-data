@@ -1309,6 +1309,21 @@ def fighter_history(db):
     return recent, upcoming
 
 
+def _keep_recent_clips(rows, old_rows):
+    """Clips found earlier stay on the same fight when the list is rebuilt."""
+    old = [r for r in old_rows or [] if r.get("clip")]
+    out = []
+    for r in rows:
+        r = dict(r)
+        for o in old:
+            if (norm(o.get("opponent", "")) == norm(r.get("opponent", "")) and o.get("date") and r.get("date")
+                    and abs((o["date"] - r["date"]).days) <= 3):
+                r["clip"] = o["clip"]
+                break
+        out.append(r)
+    return out
+
+
 def sync_fighters(db, with_records=False):
     roster = parse_roster()
     print(f"Fighters: {len(roster)} on the roster")
@@ -1348,7 +1363,7 @@ def sync_fighters(db, with_records=False):
                "nationality": extra.get("natEn") or old.get("nationality", "") or roster_country,
                "nationalityAr": extra.get("natAr") or old.get("nationalityAr", ""),
                "rank": "C" if f["champion"] else ranks.get(fid, ""),
-               "recent": merge_recent(recent.get(fid, []), wiki_recent),
+               "recent": _keep_recent_clips(merge_recent(recent.get(fid, []), wiki_recent), old.get("recent")),
                "recentWiki": wiki_recent,
                "next": upcoming.get(fid) or parse_status(f["status"]).get("next"),
                "last": parse_status(f["status"]).get("last"),
@@ -2441,6 +2456,322 @@ def run_clips_now(db, days=7):
     print(f"Clips: read {len(ig)} Instagram post(s) and {len(yt)} YouTube video(s)")
 
 
+# ---------------------------------------------------- YouTube clips (official)
+# Clips for past fights too: an index of video titles from OFFICIAL channels
+# only, read with the YouTube Data API (secret YOUTUBE_API_KEY, 10,000 free
+# units a day). Each channel is checked through the API (exact channel name +
+# a big subscriber count) before it's used; one that doesn't pass is skipped.
+# Titles must name BOTH fighters. Never print the key: logs are public.
+YT_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
+YT_API = "https://www.googleapis.com/youtube/v3"
+YT_MIN_SUBS = 200_000
+# (channel id or @handle, exact channel names allowed, only titles with "UFC")
+YT_CHANNELS = [
+    (UFC_YT_CHANNEL, ("UFC",), False),
+    ("@UFCEspanol", ("UFC Español", "UFC Espanol"), False),
+    ("@UFCBrasil", ("UFC Brasil",), False),
+    ("@UFCFightPass", ("UFC FIGHT PASS", "UFC Fight Pass"), False),
+    ("@espnmma", ("ESPN MMA",), True),
+    ("@TNTSports", ("TNT Sports",), True),
+    ("@CBSSports", ("CBS Sports",), True),
+]
+YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
+_YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
+                 "betting", "picks", "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa",
+                 "pesaje", "cara a cara", "coletiva", "pesagem", "encarada", "predicciones", "palpites",
+                 "bastidores", "trailer", "promo", "live stream", "watch party")
+_YT_GOOD = (("fullfight", 4), ("freefight", 4), ("peleacompleta", 4), ("lutacompleta", 4),
+            ("highlight", 3), ("mejoresmomentos", 3), ("melhoresmomentos", 3),
+            ("knockout", 2), ("ko", 1), ("submission", 2), ("finish", 2), ("nocaut", 2),
+            ("finalizacion", 2), ("finalizacao", 2))
+
+
+class _YTQuota(Exception):
+    pass
+
+
+def _yt_get(path, params):
+    r = requests.get(f"{YT_API}/{path}", params={**params, "key": YT_KEY}, timeout=30)
+    if r.status_code != 200:
+        reason = ""
+        try:
+            reason = ((r.json().get("error") or {}).get("errors") or [{}])[0].get("reason", "")
+        except Exception:
+            pass
+        if reason in ("quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"):
+            raise _YTQuota(reason)
+        raise RuntimeError(f"YouTube API HTTP {r.status_code} {reason}")  # no URL: it holds the key
+    return r.json()
+
+
+def yt_official_channels():
+    """[(channel id, title, ufc_only, uploads playlist)] that pass the check."""
+    out = []
+    for ref, names, ufc_only in YT_CHANNELS:
+        try:
+            q = {"forHandle": ref} if ref.startswith("@") else {"id": ref}
+            items = _yt_get("channels", {"part": "snippet,contentDetails,statistics", **q}).get("items") or []
+            if not items:
+                print(f"  YouTube channel {ref}: not found, skipped")
+                continue
+            c = items[0]
+            title = (c.get("snippet") or {}).get("title", "")
+            stats = c.get("statistics") or {}
+            subs = 0 if stats.get("hiddenSubscriberCount") else int(stats.get("subscriberCount") or 0)
+            uploads = ((c.get("contentDetails") or {}).get("relatedPlaylists") or {}).get("uploads", "")
+            if title.lower() not in {n.lower() for n in names} or subs < YT_MIN_SUBS or not uploads:
+                print(f"  YouTube channel {ref}: NOT verified ({title!r}, {subs} subscribers), skipped")
+                continue
+            print(f"  YouTube channel verified: {title} ({ref} = {c['id']}, {subs:,} subscribers)")
+            out.append((c["id"], title, ufc_only, uploads))
+        except _YTQuota:
+            raise
+        except Exception as e:
+            print(f"  YouTube channel {ref}: check failed ({type(e).__name__})")
+    return out
+
+
+def _yt_keep(title, ufc_only):
+    low = title.lower()
+    if not title or low in ("private video", "deleted video"):
+        return False
+    if any(w in low for w in _YT_SKIP + _YT_SKIP_MORE):
+        return False
+    if ufc_only and "ufc" not in low:
+        return False
+    return " vs" in low or " v " in low or "free fight" in low or "full fight" in low or "highlight" in low
+
+
+def yt_load_index(db, cid):
+    meta = db.collection("ytIndex").document(cid).get()
+    meta = meta.to_dict() if meta.exists else {}
+    rows = []
+    for n in range(int(meta.get("chunks") or 0)):
+        snap = db.collection("ytIndex").document(f"{cid}_{n}").get()
+        rows += (snap.to_dict() or {}).get("v", []) if snap.exists else []
+    return meta, rows
+
+
+def yt_save_index(db, cid, meta, rows):
+    old_chunks = int(meta.get("chunks") or 0)
+    chunks = [rows[i:i + YT_CHUNK] for i in range(0, len(rows), YT_CHUNK)] or [[]]
+    for n, part in enumerate(chunks):
+        db.collection("ytIndex").document(f"{cid}_{n}").set({"v": part})
+    for n in range(len(chunks), old_chunks):
+        db.collection("ytIndex").document(f"{cid}_{n}").delete()
+    db.collection("ytIndex").document(cid).set({**meta, "chunks": len(chunks), "count": len(rows)})
+
+
+def yt_update_index(db, full=False):
+    """Reads new uploads of each official channel (1 unit per 50 videos) and
+    returns the whole index as [(video id, published, title letters, source)].
+    The first run reads every upload; later runs stop at known videos."""
+    if not YT_KEY or db is None:
+        return []
+    index = []
+    try:
+        channels = yt_official_channels()
+    except _YTQuota:
+        print("  YouTube quota used up for today: index not updated")
+        channels = []
+    for cid, title, ufc_only, uploads in channels:
+        meta, rows = yt_load_index(db, cid)
+        known = {r.split("|", 2)[0] for r in rows}
+        complete = bool(meta.get("complete"))
+        token = None if complete else meta.get("resume")
+        newest = int(meta.get("newest") or 0)
+        top = newest
+        new_rows, pages = [], 0
+        try:
+            while True:
+                q = {"part": "snippet,contentDetails", "playlistId": uploads, "maxResults": 50}
+                if token:
+                    q["pageToken"] = token
+                data = _yt_get("playlistItems", q)
+                pages += 1
+                oldest = None
+                for it in data.get("items") or []:
+                    sn, cd = it.get("snippet") or {}, it.get("contentDetails") or {}
+                    vid = cd.get("videoId") or (sn.get("resourceId") or {}).get("videoId", "")
+                    added = _parse_time(sn.get("publishedAt") or "")
+                    if added:
+                        ts = int(added.timestamp())
+                        oldest = ts if oldest is None else min(oldest, ts)
+                        top = max(top, ts)
+                    if not vid or vid in known:
+                        continue
+                    known.add(vid)
+                    t = sn.get("title", "")
+                    at = _parse_time(cd.get("videoPublishedAt") or sn.get("publishedAt") or "")
+                    if at and _yt_keep(t, ufc_only):
+                        new_rows.append(f"{vid}|{int(at.timestamp())}|{_letters(t)[:160]}")
+                token = data.get("nextPageToken")
+                if not token:
+                    complete = True
+                    break
+                # Uploads come newest first: stop once we're back at what we had
+                # (2 days of overlap in case a video was added late).
+                if meta.get("complete") and not full and oldest is not None and oldest < newest - 2 * 86400:
+                    break
+        except _YTQuota:
+            print(f"  YouTube quota used up during {title}: saved progress, continues next run")
+        except Exception as e:
+            print(f"  YouTube index {title} stopped: {type(e).__name__}")
+        if new_rows or complete != bool(meta.get("complete")) or token != meta.get("resume"):
+            rows = new_rows + rows
+            meta.update({"title": title, "complete": complete, "newest": top if complete else newest})
+            if complete:
+                meta.pop("resume", None)
+            else:
+                meta["resume"] = token
+            yt_save_index(db, cid, meta, rows)
+        print(f"  YouTube index {title}: {len(rows)} fight videos ({len(new_rows)} new, {pages} page(s) read)")
+        for r in rows:
+            vid, ts, letters = r.split("|", 2)
+            index.append((vid, datetime.fromtimestamp(int(ts), timezone.utc), letters, title))
+    return index
+
+
+def _yt_score(letters):
+    return max([w for k, w in _YT_GOOD if k in letters] or [1])
+
+
+def _pair_key(a, b):
+    return "|".join(sorted([norm(a), norm(b)]))
+
+
+def yt_match(a, b, when, until, index):
+    """Best official video of fighter a vs fighter b, published between
+    'when' (fight day) and 'until' (the next time they met, if they did)."""
+    best = None
+    lo = when - timedelta(days=1)
+    for vid, at, letters, source in index:
+        if not (lo <= at < until):
+            continue
+        if not (_mentions(letters, a) and _mentions(letters, b)):
+            continue
+        key = (-_yt_score(letters), 0 if source == "UFC" else 1, at)
+        if best is None or key < best[0]:
+            best = (key, vid, at, source)
+    if not best:
+        return None
+    return {"url": f"https://www.youtube.com/watch?v={best[1]}", "source": "youtube", "at": best[2],
+            "channel": best[3]}
+
+
+def _meetings(events):
+    """Pair of fighters -> sorted dates they fought (for rematches)."""
+    met = {}
+    for ev in events:
+        start = ev.get("start")
+        for f in ev.get("fights") or []:
+            if start and f.get("winner"):
+                met.setdefault(_pair_key(f.get("fighterA", ""), f.get("fighterB", "")), []).append(start)
+    return {k: sorted(v) for k, v in met.items()}
+
+
+def _until(met, a, b, when):
+    later = [d for d in met.get(_pair_key(a, b), []) if d > when + timedelta(days=2)]
+    return (min(later) - timedelta(days=1)) if later else datetime.now(timezone.utc) + timedelta(days=1)
+
+
+def yt_clips_for_events(db, index):
+    """Adds a YouTube clip to every finished fight (past events too) that has none."""
+    if not index or db is None:
+        return
+    snaps = list(db.collection("events").stream())
+    events = [(s, s.to_dict() or {}) for s in snaps]
+    met = _meetings([d for _, d in events])
+    found = have = total = 0
+    report = []
+    for snap, doc in events:
+        start = doc.get("start")
+        fights = doc.get("fights") or []
+        if not start or start > datetime.now(timezone.utc):
+            continue
+        changed, out, ev_have, ev_total = False, [], 0, 0
+        for f in fights:
+            f = dict(f)
+            if f.get("winner"):
+                ev_total += 1
+                if not f.get("clip"):
+                    a, b = f.get("fighterA", ""), f.get("fighterB", "")
+                    clip = yt_match(a, b, start, _until(met, a, b, start), index)
+                    if clip:
+                        f["clip"] = clip
+                        changed = True
+                        found += 1
+                        print(f"  clip found (YouTube {clip['channel']}): {a} vs {b} ({doc.get('name', '')})")
+                if f.get("clip"):
+                    ev_have += 1
+            out.append(f)
+        if changed:
+            snap.reference.set({"fights": out}, merge=True)
+        have, total = have + ev_have, total + ev_total
+        if ev_total:
+            report.append((start, doc.get("name", snap.id), ev_have, ev_total))
+    report.sort(reverse=True)
+    for start, name, h, t in report[:12]:
+        print(f"  {name}: {h}/{t} fights have a clip")
+    print(f"YouTube clips: {found} new. All finished fights: {have}/{total} have a clip"
+          + (f" ({100 * have // total}%)" if total else ""))
+
+
+def yt_clips_for_fighters(db, index):
+    """Adds a clip to each row of a fighter's last 5 fights, from our events
+    when we have that fight, otherwise from the YouTube index."""
+    if db is None:
+        return
+    clips, met = {}, {}
+    evs = [s.to_dict() or {} for s in db.collection("events").stream()]
+    met = _meetings(evs)
+    for ev in evs:
+        for f in ev.get("fights") or []:
+            if f.get("clip") and ev.get("start"):
+                clips[(_pair_key(f.get("fighterA", ""), f.get("fighterB", "")), ev["start"].date())] = f["clip"]
+    batch, count, rows_with, rows_all = db.batch(), 0, 0, 0
+    for snap in db.collection("fighters").stream():
+        d = snap.to_dict() or {}
+        recent, changed = [], False
+        for r in d.get("recent") or []:
+            r = dict(r)
+            when = r.get("date")
+            if not r.get("clip") and when:
+                pk = _pair_key(d.get("name", ""), r.get("opponent", ""))
+                clip = next((c for (k, day), c in clips.items()
+                             if k == pk and abs((day - when.date()).days) <= 2), None)
+                if not clip and index:
+                    clip = yt_match(d.get("name", ""), r.get("opponent", ""), when,
+                                    _until(met, d.get("name", ""), r.get("opponent", ""), when), index)
+                if clip:
+                    r["clip"] = clip
+                    changed = True
+            rows_all += 1
+            rows_with += 1 if r.get("clip") else 0
+            recent.append(r)
+        if changed:
+            batch.set(snap.reference, {"recent": recent}, merge=True)
+            count += 1
+            if count % 400 == 0:
+                batch.commit()
+                batch = db.batch()
+    batch.commit()
+    print(f"Fighter last-5 clips: {count} fighter(s) updated. {rows_with}/{rows_all} rows have a clip"
+          + (f" ({100 * rows_with // rows_all}%)" if rows_all else ""))
+
+
+def yt_clips(db, full=False, fighters=False):
+    """Update the index, then fill clips on events (and fighters' last 5)."""
+    if not YT_KEY:
+        print("YouTube clips: no YOUTUBE_API_KEY yet, skipped")
+        return
+    index = yt_update_index(db, full=full)
+    print(f"YouTube clips: {len(index)} official fight videos in the index")
+    yt_clips_for_events(db, index)
+    if fighters:
+        yt_clips_for_fighters(db, index)
+
+
 def merge_fights(mine, wiki):
     """Keep hand-edited fights, only fill in results that are still missing."""
     by_pair = {"|".join(sorted([norm(f["fighterA"]), norm(f["fighterB"])])): f for f in wiki}
@@ -2484,10 +2815,15 @@ def main():
             sync_quiz(db, force=True)
         print("Done.")
         return
-    if MODE == "clips":
+    if MODE in ("clips", "clips_backfill"):
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
-            run_clips_now(db)
+            if MODE == "clips":
+                run_clips_now(db)
+            try:
+                yt_clips(db, full=MODE == "clips_backfill", fighters=True)
+            except Exception as e:
+                print(f"YouTube clips failed: {type(e).__name__}")
         print("Done.")
         return
     if MODE == "fighters":
@@ -2628,6 +2964,11 @@ def main():
             sync_fighters(db, with_records=weekly)
         except Exception as e:
             print(f"Fighters failed: {e}")
+    if MODE == "full" and db is not None:
+        try:
+            yt_clips(db, fighters=run_fighters_now())
+        except Exception as e:
+            print(f"YouTube clips failed: {type(e).__name__}")
     if db is not None and (scored_any or run_fighters_now()):
         try:
             build_leaderboard(db)

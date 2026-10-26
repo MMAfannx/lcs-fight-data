@@ -8,10 +8,10 @@ on:
   workflow_dispatch:              # run by hand from GitHub
     inputs:
       mode:
-        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now, clips = find official highlight clips of recent events now"
+        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now, clips = find official highlight clips of recent events now, clips_backfill = build the YouTube index and add clips to ALL past fights (once)"
         default: "full"
         type: choice
-        options: [full, backfill, fighters, quiz, clips]
+        options: [full, backfill, fighters, quiz, clips, clips_backfill]
       from_year:
         description: "Backfill: import events from this year onward"
         default: "2024"
@@ -33,5 +33,6 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
           IG_PAGE_TOKEN: ${{ secrets.IG_PAGE_TOKEN }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '0 */2 * * *' && 'full' || 'fightnight') }}
           BACKFILL_FROM_YEAR: ${{ inputs.from_year || '2024' }}
