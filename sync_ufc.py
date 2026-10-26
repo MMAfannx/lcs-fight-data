@@ -592,7 +592,9 @@ def fighter_photos(titles, width=400):
                 qids[title] = qid
         time.sleep(1)
 
-    # Wikidata photo for everyone still without one.
+    # Wikidata photo for everyone still without one (and their Commons
+    # category, P373, used as the last source below).
+    cats = {}  # title -> Commons category name
     missing = {qids[t]: t for t in qids if t not in files}
     ids = sorted(missing)
     for i in range(0, len(ids), 50):
@@ -605,6 +607,11 @@ def fighter_photos(titles, width=400):
             print(f"  Wikidata photo lookup skipped: {e}")
             continue
         for qid, entity in data.items():
+            for claim in (entity.get("claims") or {}).get("P373", []):
+                value = ((claim.get("mainsnak") or {}).get("datavalue") or {}).get("value")
+                if isinstance(value, str) and value:
+                    cats[missing[qid]] = value
+                    break
             for claim in (entity.get("claims") or {}).get("P18", []):
                 value = ((claim.get("mainsnak") or {}).get("datavalue") or {}).get("value")
                 if isinstance(value, str) and value:
@@ -659,87 +666,31 @@ def fighter_photos(titles, width=400):
                     files[wanted[local]] = "File:" + name
             time.sleep(1)
 
-    out, names = {}, sorted(set(files.values()))
-    info = {}
-    for i in range(0, len(names), 50):
-        chunk = names[i:i + 50]
-        params = {"action": "query", "prop": "imageinfo", "iiprop": "url|extmetadata",
-                  "iiurlwidth": str(width), "titles": "|".join(chunk),
-                  "format": "json", "formatversion": "2"}
-        try:
-            # Wikimedia Commons only hosts freely licensed files.
-            data = requests.get("https://commons.wikimedia.org/w/api.php", params=params,
-                                headers=HEADERS, timeout=30).json().get("query", {})
-        except Exception as e:
-            print(f"  photo details skipped: {e}")
+    # Last source: the fighter's own Wikimedia Commons category (free event
+    # photos people uploaded). Only a file whose name has the fighter's last
+    # name and doesn't look like a group or fight photo of two people.
+    for title, cat in sorted(cats.items()):
+        if title in files:
             continue
-        back = {n["to"]: n["from"] for n in data.get("normalized", [])}
-        for page in data.get("pages", []):
-            if page.get("missing") or page.get("imagerepository") not in (None, "local"):
-                continue  # not stored on Commons itself
-            ii = (page.get("imageinfo") or [{}])[0]
-            meta = ii.get("extmetadata") or {}
-            value = lambda k: (meta.get(k) or {}).get("value", "")
-            license_name = _plain(value("LicenseShortName"))
-            # Skip anything not clearly free.
-            if value("NonFree") or not license_name or "fair use" in license_name.lower():
-                continue
-            if not ii.get("thumburl"):
-                continue
-            info[back.get(page["title"], page["title"])] = {
-                "url": ii["thumburl"],
-                "credit": _plain(value("Artist")) or "Wikimedia Commons",
-                "license": license_name,
-                "page": ii.get("descriptionurl", ""),
-            }
-        time.sleep(1)
-    for title, name in files.items():
-        if name in info:
-            out[title] = info[name]
-    return out
-
-
-def with_origin(nationality, origin):
-    """'Sweden' + 'Iraq' -> 'Sweden, Iraq' (flags only; the first one is shown
-    everywhere except the Arab fighters section)."""
-    if not origin or origin.lower() in (nationality or "").lower():
-        return nationality or origin or ""
-    return f"{nationality}, {origin}" if nationality else origin
-
-
-# ------------------------------------------------------------------- photos
-# Fighter photos from Wikimedia Commons. Only FREE licenses (CC BY, CC BY-SA,
-# public domain, ...): we save the link and the credit, never the image.
-# The app loads the small thumbnail straight from Wikimedia and shows the credit.
-
-def _plain(html):
-    """'<a href=..>John Smith</a>' -> 'John Smith'."""
-    text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
-    return re.sub(r"\s+", " ", text).strip()[:80]
-
-
-def fighter_photos(titles, width=400):
-    """English Wikipedia titles -> {title: {"url", "credit", "license", "page"}}."""
-    titles = sorted({t for t in titles if t})
-    files = {}  # title -> "File:Name.jpg"
-    for i in range(0, len(titles), 50):
-        chunk = titles[i:i + 50]
-        params = {"action": "query", "prop": "pageimages", "piprop": "name",
-                  "pilicense": "free", "titles": "|".join(chunk), "redirects": "1",
-                  "format": "json", "formatversion": "2"}
-        try:
-            data = requests.get(API, params=params, headers=HEADERS, timeout=30).json().get("query", {})
-        except Exception as e:
-            print(f"  photo lookup skipped: {e}")
+        last = _letters((strip_title(title).split() or [""])[-1])
+        if len(last) < 3:
             continue
-        back = {n["to"]: n["from"] for n in data.get("normalized", [])}
-        for r in data.get("redirects", []):
-            back[r["to"]] = back.get(r["from"], r["from"])
-        for page in data.get("pages", []):
-            name = page.get("pageimage")
-            if name:
-                files[back.get(page["title"], page["title"])] = "File:" + name
-        time.sleep(1)
+        params = {"action": "query", "list": "categorymembers", "cmtitle": "Category:" + cat,
+                  "cmtype": "file", "cmlimit": "50", "format": "json", "formatversion": "2"}
+        try:
+            members = requests.get("https://commons.wikimedia.org/w/api.php", params=params,
+                                   headers=HEADERS, timeout=30).json().get("query", {}).get("categorymembers", [])
+        except Exception as e:
+            print(f"  Commons category skipped: {type(e).__name__}")
+            continue
+        for m in members:
+            name = m.get("title", "")
+            low = name.lower()
+            if (last in _letters(name) and low.endswith((".jpg", ".jpeg", ".png"))
+                    and not re.search(r"\bvs?\.?\b|\band\b|&|\bwith\b|poster|logo|signature", low)):
+                files[title] = name
+                break
+        time.sleep(0.5)
 
     out, names = {}, sorted(set(files.values()))
     info = {}
