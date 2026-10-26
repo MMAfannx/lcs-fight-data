@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     concurrency: ufc-sync
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,6 +31,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python sync_ufc.py
+        if: ${{ inputs.mode != 'clips_debug' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
@@ -36,3 +39,22 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '0 */2 * * *' && 'full' || 'fightnight') }}
           BACKFILL_FROM_YEAR: ${{ inputs.from_year || '2024' }}
+      # clips_debug: the report goes to the "clips-debug" branch (public titles only, no keys)
+      - name: clips debug report
+        if: ${{ inputs.mode == 'clips_debug' }}
+        run: |
+          python sync_ufc.py > /tmp/clips_debug.txt 2>&1 || true
+          cat /tmp/clips_debug.txt
+          git config user.name "MMAfannx"
+          git config user.email "MMAfannx@users.noreply.github.com"
+          git checkout --orphan clips-debug
+          git rm -rq --cached .
+          cp /tmp/clips_debug.txt clips_debug.txt
+          git add clips_debug.txt
+          git commit -qm "clips debug report"
+          git push -f origin clips-debug
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          IG_PAGE_TOKEN: ${{ secrets.IG_PAGE_TOKEN }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          SYNC_MODE: clips_debug
