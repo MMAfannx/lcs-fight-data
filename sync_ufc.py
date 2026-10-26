@@ -2230,8 +2230,10 @@ def live_watch(active):
         return
     print(f"Live watch: {len(active)} event(s), every {LIVE_EVERY}s for up to {LIVE_MINUTES} min")
     deadline = time.time() + LIVE_MINUTES * 60
+    rounds = 0
     while active and time.time() + LIVE_EVERY < deadline:
         time.sleep(LIVE_EVERY)
+        rounds += 1
         _bdl_cache.clear()
         _bdl_live.clear()
         still = []
@@ -2246,6 +2248,12 @@ def live_watch(active):
                 doc["fights"] = filled
                 check_alerts(ref, doc)
                 check_fight_alerts(ref, doc)
+                if rounds % 3 == 0:  # official clips: every ~3 minutes
+                    _clip_cache.clear()
+                    try:
+                        find_clips(ref, doc)
+                    except Exception as e:
+                        print(f"  clips failed: {type(e).__name__}")
                 if (not all(f.get("winner") for f in filled)
                         and datetime.now(timezone.utc) <= start + timedelta(hours=9)):
                     still.append((ref, start))
@@ -2254,6 +2262,183 @@ def live_watch(active):
                 still.append((ref, start))
         active = still
     print("Live watch finished")
+
+
+# ------------------------------------------------------------------- clips
+# Exact highlight clip of each finished fight, from OFFICIAL UFC accounts only:
+# - Instagram: Meta's official Business Discovery API (reads @ufc's latest
+#   public posts with our own linked account; secret IG_PAGE_TOKEN).
+# - YouTube: the official UFC channel's public uploads feed (no key needed).
+# A clip is saved only on a strict name match, and never replaced once found.
+# The app's "Watch the clip" button opens it in Instagram / YouTube.
+IG_TOKEN = os.environ.get("IG_PAGE_TOKEN", "").strip()
+IG_USER_ID = "17841422164804906"      # @historygoneweird23, linked to our Meta app
+IG_TARGET = "ufc"
+GRAPH = "https://graph.facebook.com/v26.0"
+UFC_YT_CHANNEL = "UCvgfXK4nTYKudb0rFR6noLA"
+CLIP_HOURS = 48                        # look for clips this long after an event starts
+_clip_cache = {}
+
+# Words in YouTube titles that mean "not the fight itself".
+_YT_SKIP = ("interview", "press", "conference", "faceoff", "face off", "weighin", "weigh in",
+            "embedded", "preview", "prediction", "breakdown", "countdown", "reaction", "media day")
+
+
+def _letters(text):
+    import unicodedata
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return re.sub(r"[^a-z]", "", text.lower())
+
+
+def _name_keys(name):
+    """'Petr Yan' -> {'petryan'}; 'Alexander Volkanovski' -> {'alexandervolkanovski', 'volkanovski'}.
+    Short last names (Yan, Lee) only match together with the first name."""
+    words = [w for w in re.split(r"\s+", strip_title(name or "")) if w]
+    keys = set()
+    if len(words) >= 2:
+        keys.add(_letters("".join(words)))
+    if words and len(_letters(words[-1])) >= 5:
+        keys.add(_letters(words[-1]))
+    return {k for k in keys if k}
+
+
+def _mentions(text_letters, name):
+    return any(k in text_letters for k in _name_keys(name))
+
+
+def _parse_time(value):
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00").replace("+0000", "+00:00"))
+    except Exception:
+        return None
+
+
+def _ig_recent():
+    """@ufc's latest public posts as dicts (text, url, at, video)."""
+    if "ig" in _clip_cache:
+        return _clip_cache["ig"]
+    out = []
+    if IG_TOKEN:
+        fields = ("business_discovery.username(%s){media.limit(40)"
+                  "{caption,permalink,media_type,media_product_type,timestamp}}" % IG_TARGET)
+        try:
+            r = requests.get(f"{GRAPH}/{IG_USER_ID}", params={"fields": fields, "access_token": IG_TOKEN},
+                             timeout=30)
+            data = r.json()
+            if r.status_code != 200:
+                err = (data.get("error") or {}) if isinstance(data, dict) else {}
+                print(f"  Instagram clips skipped: HTTP {r.status_code} {err.get('code', '')} {err.get('message', '')[:120]}")
+            else:
+                for m in ((data.get("business_discovery") or {}).get("media") or {}).get("data", []):
+                    at = _parse_time(m.get("timestamp", ""))
+                    url = m.get("permalink", "")
+                    if at and url.startswith("https://www.instagram.com/"):
+                        out.append({"text": _letters(m.get("caption", "")), "url": url, "at": at,
+                                    "video": m.get("media_type") == "VIDEO" or m.get("media_product_type") == "REELS",
+                                    "source": "instagram"})
+        except Exception as e:  # never print the request (it holds the token)
+            print(f"  Instagram clips skipped: {type(e).__name__}")
+    _clip_cache["ig"] = out
+    return out
+
+
+def _yt_recent():
+    """Latest uploads of the official UFC YouTube channel (Shorts included)."""
+    if "yt" in _clip_cache:
+        return _clip_cache["yt"]
+    out = []
+    try:
+        r = requests.get("https://www.youtube.com/feeds/videos.xml",
+                         params={"channel_id": UFC_YT_CHANNEL}, headers=HEADERS, timeout=30)
+        r.raise_for_status()
+        import xml.etree.ElementTree as ET
+        ns = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
+        root = ET.fromstring(r.content)
+        author = root.findtext("a:author/a:name", default="", namespaces=ns).strip()
+        if author != "UFC":
+            print(f"  YouTube clips skipped: feed author is {author!r}, not the official UFC channel")
+        else:
+            for e in root.findall("a:entry", ns):
+                title = (e.findtext("a:title", default="", namespaces=ns) or "").strip()
+                vid = (e.findtext("yt:videoId", default="", namespaces=ns) or "").strip()
+                at = _parse_time(e.findtext("a:published", default="", namespaces=ns) or "")
+                low = title.lower()
+                if vid and at and not any(w in low for w in _YT_SKIP):
+                    out.append({"text": _letters(title), "url": f"https://www.youtube.com/watch?v={vid}",
+                                "at": at, "video": True, "both_required": True, "source": "youtube"})
+    except Exception as e:
+        print(f"  YouTube clips skipped: {type(e).__name__}")
+    _clip_cache["yt"] = out
+    return out
+
+
+def _best_clip(fight, start, posts, until):
+    """The post that is clearly about this fight, or None.
+    Both fighters named = match. On Instagram, a Reel naming only the winner
+    also matches (UFC often captions finish clips with just the winner)."""
+    best = None
+    for p in posts:
+        if not (start - timedelta(hours=1) <= p["at"] <= until):
+            continue
+        a, b = _mentions(p["text"], fight.get("fighterA", "")), _mentions(p["text"], fight.get("fighterB", ""))
+        winner = fight.get("winner", "")
+        if a and b:
+            score = 3 if p["video"] else 2
+        elif not p.get("both_required") and p["video"] and winner and (
+                (a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))):
+            score = 1
+        else:
+            continue
+        # Prefer the stronger match, then the earliest post (the finish clip).
+        key = (-score, p["at"])
+        if best is None or key < best[0]:
+            best = (key, p)
+    return best[1] if best else None
+
+
+def find_clips(ref, doc, hours=CLIP_HOURS):
+    """Saves the official clip on each finished fight of this event that has none yet."""
+    if MODE == "backfill":
+        return
+    start = doc.get("start")
+    fights = doc.get("fights") or []
+    now = datetime.now(timezone.utc)
+    if not start or not fights or not (start - timedelta(hours=1) <= now <= start + timedelta(hours=hours)):
+        return
+    todo = [f for f in fights if f.get("winner") and not f.get("clip")]
+    if not todo:
+        return
+    posts = _ig_recent() + _yt_recent()
+    if not posts:
+        return
+    until = start + timedelta(hours=hours)
+    changed = False
+    out = []
+    for f in fights:
+        f = dict(f)
+        if f.get("winner") and not f.get("clip"):
+            p = _best_clip(f, start, posts, until)
+            if p:
+                f["clip"] = {"url": p["url"], "source": p["source"], "at": p["at"]}
+                changed = True
+                print(f"  clip found ({p['source']}): {f.get('fighterA')} vs {f.get('fighterB')}")
+        out.append(f)
+    if changed:
+        ref.set({"fights": out}, merge=True)
+
+
+def run_clips_now(db, days=7):
+    """SYNC_MODE=clips: look for clips of every event of the last few days now."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    snaps = list(db.collection("events").where("start", ">=", since).stream())
+    print(f"Clips: checking {len(snaps)} recent event(s)")
+    for snap in snaps:
+        doc = snap.to_dict() or {}
+        print(f"- {doc.get('name', snap.id)}")
+        find_clips(snap.reference, doc, hours=days * 24)
+    ig, yt = _clip_cache.get("ig", []), _clip_cache.get("yt", [])
+    print(f"Clips: read {len(ig)} Instagram post(s) and {len(yt)} YouTube video(s)")
 
 
 def merge_fights(mine, wiki):
@@ -2297,6 +2482,12 @@ def main():
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
             sync_quiz(db, force=True)
+        print("Done.")
+        return
+    if MODE == "clips":
+        db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
+        if db is not None:
+            run_clips_now(db)
         print("Done.")
         return
     if MODE == "fighters":
@@ -2396,6 +2587,10 @@ def main():
             check_fight_alerts(ref, {**old, **new})
         except Exception as e:
             print(f"  fight alert failed: {e}")
+        try:
+            find_clips(ref, {**old, **new})
+        except Exception as e:
+            print(f"  clips failed: {type(e).__name__}")
         on_card = new.get("fights", old.get("fights")) or []
         start_at = ({**old, **new}).get("start")
         if (MODE in ("full", "fightnight") and start_at and on_card
