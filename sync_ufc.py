@@ -732,6 +732,48 @@ def fighter_photos(titles, width=400):
     return out
 
 
+# Openverse (openverse.org, run by WordPress): one search over openly licensed
+# photos from Flickr, Wikimedia and others. Only licenses that allow
+# commercial use AND edits (we crop to a circle); never "NC" or "ND".
+OPENVERSE = "https://api.openverse.org/v1/images/"
+OPENVERSE_PER_RUN = 40  # free, no key: keep well under its daily limit
+_OV_LICENSES = {"by": "CC BY", "by-sa": "CC BY-SA", "cc0": "CC0", "pdm": "Public domain"}
+_OV_NOT_SOLO = re.compile(r"\bvs?\.?\b|\band\b|&|\bwith\b|\bfans?\b|poster|logo|signature|crowd|team|"
+                          r"belt\b.*\bbelt|\bfight\b.*\bfight", re.I)
+
+
+def openverse_photo(name):
+    """A free photo whose title names this fighter (first and last name), or None."""
+    words = [w for w in re.split(r"\s+", strip_title(name)) if w]
+    if len(words) < 2:
+        return None
+    full, first, last = _letters(" ".join(words)), _letters(words[0]), _letters(words[-1])
+    params = {"q": f'"{" ".join(words)}"', "license": ",".join(_OV_LICENSES), "mature": "false",
+              "page_size": "20", "category": "photograph"}
+    r = requests.get(OPENVERSE, params=params, headers=HEADERS, timeout=30)
+    if r.status_code == 429:
+        raise RuntimeError("Openverse daily limit")
+    if r.status_code != 200:
+        return None
+    for it in r.json().get("results") or []:
+        title = it.get("title") or ""
+        t = _letters(title)
+        tokens = {_letters(w) for w in re.split(r"[\s\-_,.|:()]+", title)}
+        lic = (it.get("license") or "").lower()
+        if lic not in _OV_LICENSES or not (full in t or (first in tokens and last in tokens)):
+            continue
+        if _OV_NOT_SOLO.search(title) or it.get("mature"):
+            continue
+        url = it.get("url") or ""
+        if not url.startswith("https://") or (it.get("width") or 0) < 300:
+            continue
+        version = it.get("license_version") or ""
+        label = _OV_LICENSES[lic] + (f" {version}" if version and lic not in ("cc0", "pdm") else "")
+        return {"url": url, "credit": (it.get("creator") or it.get("source") or "Openverse")[:80],
+                "license": label, "page": it.get("foreign_landing_url") or "", "source": "openverse"}
+    return None
+
+
 def add_arabic(fights):
     """Adds Arabic names, Arab flags and permanent fighter IDs to each fight."""
     info = fighter_info([f.get("_linkA") for f in fights] + [f.get("_linkB") for f in fights])
@@ -1297,6 +1339,8 @@ def sync_fighters(db, with_records=False):
     # One small document with every photo, so event syncs can put photos on
     # fights (Results tab) with a single read instead of one per fighter.
     photo_map = {fid: d["photo"] for fid, d in existing.items() if d.get("photo")}
+    ov_left = OPENVERSE_PER_RUN
+    month_ago = datetime.now(timezone.utc) - timedelta(days=30)
     for f in roster:
         fid = fighter_key(f["name"])
         seen.add(fid)
@@ -1323,6 +1367,20 @@ def sync_fighters(db, with_records=False):
                "active": True}
         # Free photo (link + credit) if Wikipedia has one; keep the old one otherwise.
         doc["photo"] = photos.get(link) or old.get("photo") or None
+        # Still none: try Openverse once a month per fighter (a few dozen a run).
+        searched = old.get("photoSearched")
+        if not doc["photo"] and ov_left > 0 and not (isinstance(searched, datetime) and searched > month_ago):
+            ov_left -= 1
+            try:
+                doc["photo"] = openverse_photo(f["name"])
+                if doc["photo"]:
+                    print(f"  Openverse photo: {f['name']} ({doc['photo']['license']})")
+            except Exception as e:
+                print(f"  Openverse skipped: {type(e).__name__} {e}")
+                ov_left = 0
+            doc["photoSearched"] = datetime.now(timezone.utc)
+        elif searched:
+            doc["photoSearched"] = searched
         if doc["photo"]:
             photo_map[fid] = doc["photo"]
         doc["searchTerms"] = search_terms(f["name"] + " " + doc["nameAr"], [])
