@@ -3561,11 +3561,155 @@ def run_fighters_now():
     return MODE == "fighters" or (MODE == "full" and datetime.now(timezone.utc).hour in (0, 12))
 
 
+
+# ------------------------------------------------- clips_debug (read only)
+def _loose_keys(name):
+    """Every word of a name with 3+ letters (finds 'Pico', 'Yan' too)."""
+    return {_letters(w) for w in re.split(r"\s+", strip_title(name or "")) if len(_letters(w)) >= 3}
+
+
+def run_clips_debug(db, events_n=3):
+    """SYNC_MODE=clips_debug: prints, for the last few events, every official
+    YouTube video and Instagram post around the event that names one of its
+    fighters, and what the matcher thinks of it. Changes nothing."""
+    now = datetime.now(timezone.utc)
+    snaps = [s for s in db.collection("events").where("start", "<=", now)
+             .order_by("start", direction="DESCENDING").limit(events_n).stream()]
+    events = [(s.id, s.to_dict() or {}) for s in snaps]
+    if not events:
+        print("No past events")
+        return
+    lo = min(d["start"] for _, d in events) - timedelta(days=1)
+    for eid, d in events:
+        fights = [f for f in d.get("fights") or [] if f.get("fighterA")]
+        done = [f for f in fights if f.get("winner")]
+        print(f"\n===== EVENT {d.get('name', eid)} | start {d['start']:%Y-%m-%d %H:%M} UTC | "
+              f"{sum(1 for f in done if f.get('clip'))}/{len(done)} finished fights have a clip")
+        for f in fights:
+            cl = _clip_list(f)
+            print(f"  FIGHT {f.get('fighterA')} vs {f.get('fighterB')} | winner: {f.get('winner') or '-'} | "
+                  f"keys A={sorted(_name_keys(f.get('fighterA')))} B={sorted(_name_keys(f.get('fighterB')))}")
+            for c in cl:
+                print(f"      saved: {c.get('source')} {c.get('channel')} {c.get('url')}")
+
+    def fighters_in(letters, d):
+        hits = []
+        for f in d.get("fights") or []:
+            for side in ("fighterA", "fighterB"):
+                n = f.get(side, "")
+                strict = _mentions(letters, n)
+                loose = any(k in letters for k in _loose_keys(n))
+                if strict or loose:
+                    hits.append(f"{n}{'' if strict else '(LOOSE ONLY)'}")
+        return hits
+
+    def event_of(at):
+        for eid, d in events:
+            if d["start"] - timedelta(hours=8) <= at <= d["start"] + timedelta(days=5):
+                return d
+        return None
+
+    # ---- YouTube: raw uploads of every official channel, no filtering
+    yt_rows = []
+    if YT_KEY:
+        try:
+            channels = yt_official_channels()
+        except _YTQuota:
+            channels = []
+            print("YouTube quota used up")
+        for cid, title, ufc_only, uploads in channels:
+            token, pages, n = None, 0, 0
+            try:
+                while pages < 60:
+                    q = {"part": "snippet,contentDetails", "playlistId": uploads, "maxResults": 50}
+                    if token:
+                        q["pageToken"] = token
+                    data = _yt_get("playlistItems", q)
+                    pages += 1
+                    oldest = None
+                    for it in data.get("items") or []:
+                        sn, cd = it.get("snippet") or {}, it.get("contentDetails") or {}
+                        vid = cd.get("videoId", "")
+                        at = _parse_time(cd.get("videoPublishedAt") or sn.get("publishedAt") or "")
+                        if not vid or not at:
+                            continue
+                        oldest = at if oldest is None else min(oldest, at)
+                        if at >= lo:
+                            n += 1
+                            yt_rows.append((at, title, ufc_only, vid, sn.get("title", "")))
+                    token = data.get("nextPageToken")
+                    if not token or (oldest and oldest < lo):
+                        break
+            except _YTQuota:
+                print(f"YouTube quota used up during {title}")
+                break
+            except Exception as e:
+                print(f"YouTube {title} failed: {type(e).__name__}")
+            print(f"YouTube {title}: {n} uploads since {lo:%Y-%m-%d} ({pages} page(s))")
+        # Region + Shorts length for videos that name a fighter
+        named = [r for r in yt_rows if event_of(r[0]) and fighters_in(_letters(r[4]), event_of(r[0]))]
+        info = {}
+        ids = [r[3] for r in named]
+        for i in range(0, len(ids), 50):
+            try:
+                for it in _yt_get("videos", {"part": "contentDetails,status",
+                                             "id": ",".join(ids[i:i + 50])}).get("items") or []:
+                    rr = (it.get("contentDetails") or {}).get("regionRestriction") or {}
+                    allowed, blocked = set(rr.get("allowed") or []), set(rr.get("blocked") or [])
+                    ok = (not allowed or YT_MUST_PLAY_IN <= allowed) and not (blocked & YT_MUST_PLAY_IN)
+                    ma = "MA" not in blocked and (not allowed or "MA" in allowed)
+                    info[it["id"]] = (ok, ma, (it.get("contentDetails") or {}).get("duration", ""),
+                                      (it.get("status") or {}).get("privacyStatus", ""))
+            except Exception as e:
+                print(f"YouTube videos check failed: {type(e).__name__}")
+        for eid, d in events:
+            rows = sorted(r for r in named if event_of(r[0]) is d)
+            print(f"\n===== YOUTUBE around {d.get('name', eid)}: {len(rows)} official videos name a fighter")
+            for at, ch, ufc_only, vid, t in rows:
+                letters = _letters(t)
+                ok, ma, dur, priv = info.get(vid, (None, None, "", ""))
+                keep = _yt_keep(t, ufc_only)
+                print(f"  {at:%m-%d %H:%M} [{ch}] {t[:110]!r}")
+                print(f"      names={fighters_in(letters, d)} index_keep={keep} text_ok={_clip_text_ok(letters, 'youtube')} "
+                      f"score={_yt_score(letters)} arab_ok={ok} morocco_ok={ma} {dur} {priv} https://youtu.be/{vid}")
+    else:
+        print("No YOUTUBE_API_KEY")
+
+    # ---- Instagram: latest posts of each official account, raw
+    if IG_TOKEN:
+        for username in IG_ACCOUNTS:
+            try:
+                bd = _ig_page(username)
+            except Exception as e:
+                print(f"\nInstagram @{username} failed: {type(e).__name__}")
+                continue
+            posts = (bd.get("media") or {}).get("data") or []
+            print(f"\n===== INSTAGRAM @{username}: latest {len(posts)} posts")
+            for m in posts:
+                at = _parse_time(m.get("timestamp", ""))
+                cap = (m.get("caption") or "").replace("\n", " ")
+                d = event_of(at) if at else None
+                hits = fighters_in(_letters(cap), d) if d else []
+                if not hits and username != "ufc":
+                    continue
+                print(f"  {at:%m-%d %H:%M} {m.get('media_type')}/{m.get('media_product_type')} {m.get('permalink')}")
+                print(f"      {cap[:120]!r}")
+                print(f"      names={hits} text_ok={_clip_text_ok(_letters(cap), 'instagram')}")
+    else:
+        print("No IG_PAGE_TOKEN")
+
+
 def main():
     if MODE == "quiz":
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
             sync_quiz(db, force=True)
+        print("Done.")
+        return
+    if MODE == "clips_debug":
+        db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
+        if db is not None:
+            run_clips_debug(db)
         print("Done.")
         return
     if MODE in ("clips", "clips_backfill"):

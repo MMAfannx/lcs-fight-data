@@ -8,10 +8,10 @@ on:
   workflow_dispatch:              # run by hand from GitHub
     inputs:
       mode:
-        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now, clips = find official highlight clips of recent events now, clips_backfill = build the YouTube index and add clips to ALL past fights (once)"
+        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now, clips = find official highlight clips of recent events now, clips_backfill = build the YouTube index and add clips to ALL past fights (once), clips_debug = print why clips are missing (changes nothing)"
         default: "full"
         type: choice
-        options: [full, backfill, fighters, quiz, clips, clips_backfill]
+        options: [full, backfill, fighters, quiz, clips, clips_backfill, clips_debug]
       from_year:
         description: "Backfill: import events from this year onward"
         default: "2024"
