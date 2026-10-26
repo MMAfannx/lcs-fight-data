@@ -2479,7 +2479,13 @@ YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
                  "betting", "picks", "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa",
                  "pesaje", "cara a cara", "coletiva", "pesagem", "encarada", "predicciones", "palpites",
-                 "bastidores", "trailer", "promo", "live stream", "watch party")
+                 "bastidores", "trailer", "promo", "live stream", "watch party", "walkout", "walk out",
+                 "entrance", "backstage", "behind the scenes", "fight week", "workout", "calls out", "callout")
+# Finish/highlight words: with one of these, a title naming only the winner
+# counts too (UFC often titles finish clips "Jean Silva Brutal Finish").
+_YT_FINISH = ("knockout", "knocks out", "knocked out", " ko", "tko", "submission", "submits", "finish",
+              "highlight", "free fight", "full fight", "nocaut", "finaliza", "mejores momentos",
+              "melhores momentos", "pelea completa", "luta completa")
 _YT_GOOD = (("fullfight", 4), ("freefight", 4), ("peleacompleta", 4), ("lutacompleta", 4),
             ("highlight", 3), ("mejoresmomentos", 3), ("melhoresmomentos", 3),
             ("knockout", 2), ("ko", 1), ("submission", 2), ("finish", 2), ("nocaut", 2),
@@ -2539,7 +2545,7 @@ def _yt_keep(title, ufc_only):
         return False
     if ufc_only and "ufc" not in low:
         return False
-    return " vs" in low or " v " in low or "free fight" in low or "full fight" in low or "highlight" in low
+    return " vs" in low or " v " in low or any(w in low for w in _YT_FINISH)
 
 
 def yt_load_index(db, cid):
@@ -2640,17 +2646,26 @@ def _pair_key(a, b):
     return "|".join(sorted([norm(a), norm(b)]))
 
 
-def yt_match(a, b, when, until, index):
+def yt_match(a, b, when, until, index, winner=""):
     """Best official video of fighter a vs fighter b, published between
-    'when' (fight day) and 'until' (the next time they met, if they did)."""
+    'when' (fight day) and 'until' (the next time they met, if they did).
+    A title naming only the winner also counts when it has a finish word and
+    came out within 4 days of the fight (both names are always preferred)."""
     best = None
     lo = when - timedelta(days=1)
+    soon = when + timedelta(days=4)
     for vid, at, letters, source in index:
         if not (lo <= at < until):
             continue
-        if not (_mentions(letters, a) and _mentions(letters, b)):
+        ma, mb = _mentions(letters, a), _mentions(letters, b)
+        if ma and mb:
+            tier = 0
+        elif (winner and at <= soon and _yt_score(letters) >= 2
+              and ((ma and norm(winner) == norm(a)) or (mb and norm(winner) == norm(b)))):
+            tier = 1
+        else:
             continue
-        key = (-_yt_score(letters), 0 if source == "UFC" else 1, at)
+        key = (tier, -_yt_score(letters), 0 if source == "UFC" else 1, at)
         if best is None or key < best[0]:
             best = (key, vid, at, source)
     if not best:
@@ -2696,7 +2711,7 @@ def yt_clips_for_events(db, index):
                 ev_total += 1
                 if not f.get("clip"):
                     a, b = f.get("fighterA", ""), f.get("fighterB", "")
-                    clip = yt_match(a, b, start, _until(met, a, b, start), index)
+                    clip = yt_match(a, b, start, _until(met, a, b, start), index, f.get("winner", ""))
                     if clip:
                         f["clip"] = clip
                         changed = True
@@ -2741,8 +2756,9 @@ def yt_clips_for_fighters(db, index):
                 clip = next((c for (k, day), c in clips.items()
                              if k == pk and abs((day - when.date()).days) <= 2), None)
                 if not clip and index:
-                    clip = yt_match(d.get("name", ""), r.get("opponent", ""), when,
-                                    _until(met, d.get("name", ""), r.get("opponent", ""), when), index)
+                    me, opp = d.get("name", ""), r.get("opponent", "")
+                    won = me if r.get("outcome") == "W" else opp if r.get("outcome") == "L" else ""
+                    clip = yt_match(me, opp, when, _until(met, me, opp, when), index, won)
                 if clip:
                     r["clip"] = clip
                     changed = True
