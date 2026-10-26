@@ -2452,15 +2452,15 @@ def _clip_list(f):
 
 
 def _add_clip(f, clip):
-    """Adds a clip if this fight has none from that platform yet. 'clip' stays
-    the first one found (older app versions open that one)."""
+    """Adds a clip if this fight has none from that platform yet. 'clip' is the
+    preferred one (YouTube when there is one): older app versions open that."""
     clips = _clip_list(f)
     if clip.get("source") in {c.get("source") for c in clips}:
         return False
     clips.append(clip)
+    clips.sort(key=lambda c: c.get("source") != "youtube")  # YouTube first
     f["clips"] = clips
-    if not f.get("clip"):
-        f["clip"] = clip
+    f["clip"] = clips[0]
     return True
 
 
@@ -2523,12 +2523,17 @@ YT_MIN_SUBS = 200_000
 # (channel id or @handle, exact channel names allowed, only titles with "UFC")
 YT_CHANNELS = [
     (UFC_YT_CHANNEL, ("UFC",), False),
-    ("@UFCEspanol", ("UFC Español", "UFC Espanol"), False),
+    ("@UFCEspanol", ("UFC Español", "UFC Espanol", "ufcespanol"), False),
     ("@UFCBrasil", ("UFC Brasil",), False),
     ("@UFCFightPass", ("UFC FIGHT PASS", "UFC Fight Pass"), False),
     ("@espnmma", ("ESPN MMA",), True),
     ("@TNTSports", ("TNT Sports",), True),
     ("@CBSSports", ("CBS Sports",), True),
+    # Official UFC broadcasters (only their videos with "UFC" in the title).
+    ("@paramountplus", ("Paramount+", "Paramount Plus"), True),
+    ("@espn", ("ESPN",), True),
+    ("@canalcombate", ("Combate", "Canal Combate"), True),
+    ("@tsn", ("TSN",), True),
 ]
 YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
@@ -3005,6 +3010,7 @@ def _purge_rows(rows, is_bad):
             r.pop("clip", None)
             r.pop("clips", None)
             if keep:
+                keep.sort(key=lambda c: c.get("source") != "youtube")
                 r["clip"], r["clips"] = keep[0], keep
     return changed
 
