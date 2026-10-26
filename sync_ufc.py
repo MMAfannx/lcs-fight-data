@@ -3192,6 +3192,62 @@ def yt_clips(db, full=False, fighters=False):
     region.save()
 
 
+# ------------------------------------------------------------ news covers
+# Finds the fighters a news post is about (names in its title or summary, in
+# Arabic or English) and saves them with their free photo on the post, so the
+# app can show a fighters cover. Each post is checked once (newsTagged).
+NEWS_TAG_VERSION = 1
+
+
+def _ar_norm(text):
+    text = re.sub(r"[\u064B-\u0652\u0640]", "", text or "")  # harakat, tatweel
+    return (text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+            .replace("ى", "ي").replace("ة", "ه"))
+
+
+def tag_news(db):
+    if db is None:
+        return
+    todo = [s for s in db.collection("articles").stream()
+            if (s.to_dict() or {}).get("newsTagged") != NEWS_TAG_VERSION]
+    if not todo:
+        return
+    fighters = [(s.id, s.to_dict() or {}) for s in db.collection("fighters").stream()]
+    keys = {}  # key -> fighter ids using it
+    for fid, d in fighters:
+        ar = _ar_norm(d.get("nameAr", "")).strip()
+        words = ar.split()
+        cand = set()
+        if len(words) >= 2:
+            cand.add(("ar", ar))
+        if words and len(words[-1]) >= 4:
+            cand.add(("ar", words[-1]))
+        for k in _name_keys(d.get("name", "")):
+            cand.add(("en", k))
+        for c in cand:
+            keys.setdefault(c, set()).add(fid)
+    unique = {k: next(iter(v)) for k, v in keys.items() if len(v) == 1}  # skip shared names (Silva...)
+    info = dict(fighters)
+    tagged = 0
+    for snap in todo:
+        a = snap.to_dict() or {}
+        found = {}
+        for weight, text in ((0, a.get("title", "")), (10000, a.get("summary", ""))):
+            ar_text, en_text = _ar_norm(text), _letters(text)
+            for (lang, k), fid in unique.items():
+                pos = (ar_text if lang == "ar" else en_text).find(k)
+                if pos >= 0:
+                    found[fid] = min(found.get(fid, 10 ** 9), weight + pos)
+        top = sorted(found, key=found.get)[:2]
+        out = [{"id": fid, "name": info[fid].get("name", ""), "nameAr": info[fid].get("nameAr", ""),
+                "photo": info[fid].get("photo") or None} for fid in top]
+        snap.reference.set({"fighters": out, "newsTagged": NEWS_TAG_VERSION}, merge=True)
+        tagged += 1
+        if out:
+            print(f"  news: {a.get('title', '')[:50]!r} -> {', '.join(f['name'] for f in out)}")
+    print(f"News covers: {tagged} post(s) checked")
+
+
 def merge_fights(mine, wiki):
     """Keep hand-edited fights, only fill in results that are still missing."""
     by_pair = {"|".join(sorted([norm(f["fighterA"]), norm(f["fighterB"])])): f for f in wiki}
@@ -3238,6 +3294,10 @@ def main():
     if MODE in ("clips", "clips_backfill"):
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
+            try:
+                tag_news(db)
+            except Exception as e:
+                print(f"News covers failed: {type(e).__name__}")
             if MODE == "clips":
                 run_clips_now(db)
             try:
@@ -3387,6 +3447,10 @@ def main():
         except Exception as e:
             print(f"Fighters failed: {e}")
     if MODE == "full" and db is not None:
+        try:
+            tag_news(db)
+        except Exception as e:
+            print(f"News covers failed: {type(e).__name__}")
         try:
             yt_clips(db, fighters=run_fighters_now())
         except Exception as e:
