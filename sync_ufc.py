@@ -1670,6 +1670,34 @@ def infobox_facts(title=None, html=None):
     return facts
 
 
+def build_fighter_index(db):
+    """One small document with every fighter the app can search (name, Arabic
+    name, rank, flag, record, photo link), so the app's search box suggests
+    names as you type from a single read instead of a query per keystroke."""
+    if db is None:
+        return
+    rows = []
+    for snap in db.collection("fighters").stream():
+        d = snap.to_dict() or {}
+        if not (d.get("active") or d.get("legend")) or not d.get("name"):
+            continue
+        photo = d.get("photo") or {}
+        row = {"id": snap.id, "name": d["name"]}
+        for key in ("nameAr", "rank", "iso", "nationality", "mmaRecord", "careerRecord", "division"):
+            if d.get(key):
+                row[key] = d[key]
+        if d.get("active"):
+            row["active"] = True
+        if d.get("legend"):
+            row["legend"] = True
+        if photo.get("url"):
+            row["photo"] = {"url": photo["url"]}
+        rows.append(row)
+    rows.sort(key=lambda r: r["name"])
+    db.collection("meta").document("fighterIndex").set({"fighters": rows, "updated": datetime.now(timezone.utc)})
+    print(f"Fighter search index: {len(rows)} fighters")
+
+
 def sync_legends(db):
     champs = champion_titles()
     print(f"Legends: {len(champs)} UFC champions in history")
@@ -3356,6 +3384,10 @@ def main():
             sync_legends(db)
         except Exception as e:
             print(f"Legends failed: {e}")
+        try:
+            build_fighter_index(db)
+        except Exception as e:
+            print(f"Fighter search index failed: {type(e).__name__}")
         if db is not None:
             try:
                 build_leaderboard(db)
@@ -3488,6 +3520,10 @@ def main():
             sync_fighters(db, with_records=weekly)
         except Exception as e:
             print(f"Fighters failed: {e}")
+        try:
+            build_fighter_index(db)
+        except Exception as e:
+            print(f"Fighter search index failed: {type(e).__name__}")
     if MODE == "full" and db is not None:
         try:
             tag_news(db)
