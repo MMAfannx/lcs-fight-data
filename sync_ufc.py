@@ -2736,6 +2736,27 @@ def _add_clip(f, clip):
     return _merge_clips(f, [clip])
 
 
+_live_region = {}
+
+
+def _live_plays(url):
+    """During a live event: does this YouTube video play in Arab countries?
+    (1 quota unit per new video; unknown = allowed, like YTRegion.)"""
+    vid = url.rsplit("v=", 1)[-1]
+    if vid not in _live_region:
+        ok = True
+        if YT_KEY:
+            try:
+                items = _yt_get("videos", {"part": "contentDetails", "id": vid}).get("items") or []
+                rr = ((items[0].get("contentDetails") or {}).get("regionRestriction") or {}) if items else {}
+                allowed, blocked = set(rr.get("allowed") or []), set(rr.get("blocked") or [])
+                ok = (not allowed or YT_MUST_PLAY_IN <= allowed) and not (blocked & YT_MUST_PLAY_IN)
+            except Exception:
+                pass
+        _live_region[vid] = ok
+    return _live_region[vid]
+
+
 def find_clips(ref, doc, hours=CLIP_HOURS):
     """Saves the official clip on each finished fight of this event that has none yet."""
     if MODE == "backfill":
@@ -2761,6 +2782,8 @@ def find_clips(ref, doc, hours=CLIP_HOURS):
                 if platform in {c.get("source") for c in _clip_list(f)}:
                     continue
                 p = _best_clip(f, start, [x for x in posts if x["source"] == platform], until)
+                if p and platform == "youtube" and not _live_plays(p["url"]):
+                    p = None  # blocked in Arab countries: wait for another source
                 if p and _add_clip(f, {"url": p["url"], "source": p["source"], "at": p["at"],
                                        "channel": "@ufc" if platform == "instagram" else "UFC"}):
                     changed = True
