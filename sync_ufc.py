@@ -2537,7 +2537,7 @@ def live_watch(active):
 # The app's "Watch the clip" button opens it in Instagram / YouTube.
 IG_TOKEN = os.environ.get("IG_PAGE_TOKEN", "").strip()
 IG_USER_ID = "17841422164804906"      # @historygoneweird23, linked to our Meta app
-IG_TARGET = "ufc"
+IG_TARGET = "ufceurope"  # fight night: its Reels play in Arab countries (many @ufc Reels don't)
 GRAPH = "https://graph.facebook.com/v26.0"
 UFC_YT_CHANNEL = "UCvgfXK4nTYKudb0rFR6noLA"
 CLIP_HOURS = 48                        # look for clips this long after an event starts
@@ -2583,7 +2583,7 @@ def _parse_time(value):
 
 
 def _ig_recent():
-    """@ufc's latest public posts as dicts (text, url, at, video)."""
+    """@ufceurope's latest public posts as dicts (text, url, at, video)."""
     if "ig" in _clip_cache:
         return _clip_cache["ig"]
     out = []
@@ -2787,7 +2787,7 @@ def find_clips(ref, doc, hours=CLIP_HOURS):
                 if p and platform == "youtube" and not _live_plays(p["url"]):
                     p = None  # blocked in Arab countries: wait for another source
                 if p and _add_clip(f, {"url": p["url"], "source": p["source"], "at": p["at"],
-                                       "channel": "@ufc" if platform == "instagram" else "UFC"}):
+                                       "channel": f"@{IG_TARGET}" if platform == "instagram" else "UFC"}):
                     changed = True
                     print(f"  clip found ({p['source']}): {f.get('fighterA')} vs {f.get('fighterB')}")
         out.append(f)
@@ -3111,9 +3111,11 @@ def yt_match(a, b, when, until, index, winner=""):
 # goes back in time, so past fights get Reels too. An account is used only if
 # it exists with a big following; the log lists them so the owner can confirm
 # each has Instagram's blue tick.
-IG_ACCOUNTS = ("ufc", "ufcespanol", "ufceurope", "ufcindia", "ufcfightpass", "espnmma")
-# Accounts whose Reels don't play in our viewers' countries: their clips are removed.
-IG_BLOCKED = {"@ufc_brasil"}
+IG_ACCOUNTS = ("ufceurope", "ufcespanol", "ufcindia", "ufcfightpass", "espnmma")
+# Accounts whose Reels often don't play in our viewers' countries ("not available
+# in your country", tested from Morocco): @ufc_brasil (all), @ufc (2 of 5).
+# Their clips are removed.
+IG_BLOCKED = {"@ufc_brasil", "@ufc"}
 IG_MIN_FOLLOWERS = 300_000
 IG_PAGES_PER_RUN = 40  # 50 posts per page, per account
 IG_CALLS_PER_RUN = 120  # Meta allows ~200 calls an hour; leave room for live clips
