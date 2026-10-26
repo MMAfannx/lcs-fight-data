@@ -2451,17 +2451,38 @@ def _clip_list(f):
     return list(f.get("clips") or ([f["clip"]] if f.get("clip") else []))
 
 
-def _add_clip(f, clip):
-    """Adds a clip if this fight has none from that platform yet. 'clip' is the
-    preferred one (YouTube when there is one): older app versions open that."""
+CLIPS_MAX = {"youtube": 3, "instagram": 2}  # sources kept per fight, so fans can pick
+
+
+def _clip_rank(c):
+    """YouTube first, then the official UFC accounts, then others."""
+    return (c.get("source") != "youtube", c.get("channel") not in ("UFC", "@ufc"))
+
+
+def _merge_clips(f, new):
+    """Adds new official clips to a fight (or last-5 row): different channels
+    only, at most CLIPS_MAX per platform. 'clip' = the preferred one (what
+    older app versions open). True if something changed."""
     clips = _clip_list(f)
-    if clip.get("source") in {c.get("source") for c in clips}:
-        return False
-    clips.append(clip)
-    clips.sort(key=lambda c: c.get("source") != "youtube")  # YouTube first
-    f["clips"] = clips
-    f["clip"] = clips[0]
-    return True
+    urls = {c.get("url") for c in clips}
+    changed = False
+    for c in new:
+        same = [x for x in clips if x.get("source") == c.get("source")]
+        if (c.get("url") in urls or len(same) >= CLIPS_MAX.get(c.get("source"), 1)
+                or c.get("channel") in {x.get("channel") for x in same if x.get("channel")}):
+            continue
+        clips.append(c)
+        urls.add(c.get("url"))
+        changed = True
+    if changed or (clips and f.get("clip") != sorted(clips, key=_clip_rank)[0]):
+        clips.sort(key=_clip_rank)
+        f["clips"], f["clip"] = clips, clips[0]
+        return True
+    return False
+
+
+def _add_clip(f, clip):
+    return _merge_clips(f, [clip])
 
 
 def find_clips(ref, doc, hours=CLIP_HOURS):
@@ -2743,39 +2764,45 @@ def _pair_key(a, b):
     return "|".join(sorted([norm(a), norm(b)]))
 
 
-def clip_match(a, b, when, until, index, winner="", platform="youtube"):
-    """Best official video of fighter a vs fighter b on one platform, posted
-    between 'when' (fight day) and 'until' (the next time they met, if they did).
+def clip_candidates(a, b, when, until, index, winner="", platform="youtube"):
+    """Official videos of fighter a vs fighter b on one platform, best first,
+    posted between 'when' (fight day) and 'until' (the next time they met).
     Both names = match. A post naming only the winner also counts when it came
     out within 4 days (YouTube: with a finish word; Instagram: a video/Reel).
     Instagram posts must be videos (fight graphics are photos)."""
-    best = None
+    out = []
     lo = when - timedelta(days=1)
     soon = when + timedelta(days=4)
+    ka, kb = _name_keys(a), _name_keys(b)
+    wa, wb = bool(winner) and norm(winner) == norm(a), bool(winner) and norm(winner) == norm(b)
     for e in index:
         if e["platform"] != platform or not (lo <= e["at"] < until):
             continue
         if platform == "instagram" and not e["video"]:
             continue
         letters = e["letters"]
-        if not _clip_text_ok(letters, platform):
+        ma, mb = any(k in letters for k in ka), any(k in letters for k in kb)
+        if not (ma or mb) or not _clip_text_ok(letters, platform):
             continue
-        ma, mb = _mentions(letters, a), _mentions(letters, b)
         score = _yt_score(letters)
         if ma and mb:
             tier = 0
-        elif (winner and e["at"] <= soon and (platform == "instagram" or score >= 2)
-              and ((ma and norm(winner) == norm(a)) or (mb and norm(winner) == norm(b)))):
+        elif e["at"] <= soon and (platform == "instagram" or score >= 2) and ((ma and wa) or (mb and wb)):
             tier = 1
         else:
             continue
-        key = (tier, -score, 0 if e["label"] in ("UFC", "@ufc") else 1, e["at"])
-        if best is None or key < best[0]:
-            best = (key, e)
-    if not best:
-        return None
-    e = best[1]
-    return {"url": e["url"], "source": platform, "at": e["at"], "channel": e["label"]}
+        out.append(((tier, -score, 0 if e["label"] in ("UFC", "@ufc") else 1, e["at"]), e))
+    out.sort(key=lambda x: x[0])
+    return [e for _, e in out]
+
+
+def _clip_from(e):
+    return {"url": e["url"], "source": e["platform"], "at": e["at"], "channel": e["label"]}
+
+
+def clip_match(a, b, when, until, index, winner="", platform="youtube"):
+    c = clip_candidates(a, b, when, until, index, winner, platform)
+    return _clip_from(c[0]) if c else None
 
 
 def yt_match(a, b, when, until, index, winner=""):
@@ -2908,86 +2935,164 @@ def _until(met, a, b, when):
     return (min(later) - timedelta(days=1)) if later else datetime.now(timezone.utc) + timedelta(days=1)
 
 
-def yt_clips_for_events(db, index):
-    """Adds a YouTube clip to every finished fight (past events too) that has none."""
+# Viewers are mostly in Arab countries: skip videos YouTube blocks there
+# (regional UFC channels often allow only their own country).
+YT_MUST_PLAY_IN = {"MA", "SA", "EG", "AE", "DZ", "IQ", "JO", "KW", "QA", "TN", "LB", "OM", "BH", "LY"}
+
+
+class YTRegion:
+    """Which videos play in our viewers' countries, cached in meta/ytRegion."""
+
+    def __init__(self, db):
+        self.db = db
+        snap = db.collection("meta").document("ytRegion").get()
+        self.ok = dict((snap.to_dict() or {}).get("ok") or {}) if snap.exists else {}
+        self.dirty = False
+
+    def check(self, vids):
+        todo = [v for v in dict.fromkeys(vids) if v not in self.ok]
+        if not YT_KEY:
+            return
+        try:
+            for i in range(0, len(todo), 50):
+                part = todo[i:i + 50]
+                found = {}
+                for it in _yt_get("videos", {"part": "contentDetails,status", "id": ",".join(part)}).get("items") or []:
+                    rr = (it.get("contentDetails") or {}).get("regionRestriction") or {}
+                    public = (it.get("status") or {}).get("privacyStatus") == "public"
+                    allowed, blocked = set(rr.get("allowed") or []), set(rr.get("blocked") or [])
+                    found[it["id"]] = public and (not allowed or YT_MUST_PLAY_IN <= allowed) \
+                        and not (blocked & YT_MUST_PLAY_IN)
+                for v in part:
+                    self.ok[v] = found.get(v, False)  # missing = deleted or private
+                self.dirty = True
+        except Exception as e:
+            print(f"  YouTube region check stopped: {type(e).__name__}")
+
+    def plays(self, url):
+        vid = url.rsplit("v=", 1)[-1]
+        return self.ok.get(vid, True)  # unknown (not checked yet) = allowed
+
+    def save(self):
+        if self.dirty:
+            self.db.collection("meta").document("ytRegion").set({"ok": self.ok})
+            blocked = sum(1 for v in self.ok.values() if not v)
+            print(f"  YouTube region check: {len(self.ok)} videos checked, {blocked} don't play in Arab countries")
+
+
+def _vid(url):
+    return url.rsplit("v=", 1)[-1]
+
+
+def _pick(cands, platform, region):
+    """Up to CLIPS_MAX clips from different channels, best first."""
+    out, seen = [], set()
+    for e in cands:
+        if e["label"] in seen or (platform == "youtube" and not region.plays(e["url"])):
+            continue
+        seen.add(e["label"])
+        out.append(_clip_from(e))
+        if len(out) >= CLIPS_MAX[platform]:
+            break
+    return out
+
+
+def yt_clips_for_events(db, index, region=None, days=None):
+    """Adds official clips (several sources when there are) to every finished
+    fight; days=None means all events, past ones too."""
     if not index or db is None:
         return
-    snaps = list(db.collection("events").stream())
-    events = [(s, s.to_dict() or {}) for s in snaps]
+    region = region or YTRegion(db)
+    now = datetime.now(timezone.utc)
+    events = [(snap, snap.to_dict() or {}) for snap in db.collection("events").stream()]
     met = _meetings([d for _, d in events])
+    # First the candidates, then one YouTube call per 50 videos for the region check.
+    plan, vids = [], []
+    for snap, doc in events:
+        start = doc.get("start")
+        if not start or start > now or (days and start < now - timedelta(days=days)):
+            continue
+        for k, f in enumerate(doc.get("fights") or []):
+            if f.get("winner"):
+                a, b = f.get("fighterA", ""), f.get("fighterB", "")
+                until = _until(met, a, b, start)
+                cands = {p: clip_candidates(a, b, start, until, index, f.get("winner", ""), p)
+                         for p in ("youtube", "instagram")}
+                vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
+                plan.append((snap.id, k, cands))
+    region.check(vids)
+    by_event = {}
+    for eid, k, cands in plan:
+        by_event.setdefault(eid, []).append((k, cands))
     found = have = total = multi = 0
     report = []
     for snap, doc in events:
-        start = doc.get("start")
-        fights = doc.get("fights") or []
-        if not start or start > datetime.now(timezone.utc):
-            continue
-        changed, out, ev_have, ev_total = False, [], 0, 0
-        for f in fights:
-            f = dict(f)
-            if f.get("winner"):
-                ev_total += 1
-                a, b = f.get("fighterA", ""), f.get("fighterB", "")
-                for platform in ("youtube", "instagram"):
-                    if platform in {c.get("source") for c in _clip_list(f)}:
-                        continue
-                    clip = clip_match(a, b, start, _until(met, a, b, start), index, f.get("winner", ""), platform)
-                    if clip and _add_clip(f, clip):
-                        changed = True
-                        found += 1
-                        print(f"  clip found ({clip['channel']}): {a} vs {b} ({doc.get('name', '')})")
-                if f.get("clip"):
-                    ev_have += 1
-                if len(_clip_list(f)) > 1:
-                    multi += 1
-            out.append(f)
+        fights = [dict(f) for f in doc.get("fights") or []]
+        changed = False
+        for k, cands in by_event.get(snap.id, []):
+            f = fights[k]
+            new = _pick(cands["youtube"], "youtube", region) + _pick(cands["instagram"], "instagram", region)
+            before = len(_clip_list(f))
+            if _merge_clips(f, new):
+                changed = True
+                found += max(0, len(_clip_list(f)) - before)
         if changed:
-            snap.reference.set({"fights": out}, merge=True)
-        have, total = have + ev_have, total + ev_total
-        if ev_total:
-            report.append((start, doc.get("name", snap.id), ev_have, ev_total))
+            snap.reference.set({"fights": fights}, merge=True)
+        if snap.id in by_event:
+            done = [f for f in fights if f.get("winner")]
+            ev_have = sum(1 for f in done if f.get("clip"))
+            multi += sum(1 for f in done if len(_clip_list(f)) > 1)
+            have, total = have + ev_have, total + len(done)
+            report.append((doc["start"], doc.get("name", snap.id), ev_have, len(done)))
     report.sort(reverse=True)
     for start, name, h, t in report[:12]:
         print(f"  {name}: {h}/{t} fights have a clip")
-    print(f"Official clips: {found} new. All finished fights: {have}/{total} have a clip"
-          + (f" ({100 * have // total}%)" if total else "") + f", {multi} with a choice of 2 sources")
+    print(f"Official clips: {found} new. Finished fights checked: {have}/{total} have a clip"
+          + (f" ({100 * have // total}%)" if total else "") + f", {multi} with a choice of sources")
 
 
-def yt_clips_for_fighters(db, index):
-    """Adds a clip to each row of a fighter's last 5 fights, from our events
-    when we have that fight, otherwise from the YouTube index."""
+def yt_clips_for_fighters(db, index, region=None):
+    """Adds clips to each row of a fighter's last 5 fights: the event's clips
+    when we have that fight, plus matches from the index."""
     if db is None:
         return
-    clips, met = {}, {}
+    region = region or YTRegion(db)
+    clips = {}
     evs = [s.to_dict() or {} for s in db.collection("events").stream()]
     met = _meetings(evs)
     for ev in evs:
         for f in ev.get("fights") or []:
             if f.get("clip") and ev.get("start"):
                 clips[(_pair_key(f.get("fighterA", ""), f.get("fighterB", "")), ev["start"].date())] = _clip_list(f)
-    batch, count, rows_with, rows_all = db.batch(), 0, 0, 0
-    for snap in db.collection("fighters").stream():
-        d = snap.to_dict() or {}
-        recent, changed = [], False
-        for r in d.get("recent") or []:
-            r = dict(r)
+    docs = [(snap, snap.to_dict() or {}) for snap in db.collection("fighters").stream()]
+    plan, vids = {}, []
+    for snap, d in docs:
+        for k, r in enumerate(d.get("recent") or []):
             when = r.get("date")
-            if when and len(_clip_list(r)) < 2:
+            if not when or not index:
+                continue
+            me, opp = d.get("name", ""), r.get("opponent", "")
+            won = me if r.get("outcome") == "W" else opp if r.get("outcome") == "L" else ""
+            cands = {p: clip_candidates(me, opp, when, _until(met, me, opp, when), index, won, p)
+                     for p in ("youtube", "instagram")}
+            vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
+            plan[(snap.id, k)] = cands
+    region.check(vids)
+    batch, count, rows_with, rows_all = db.batch(), 0, 0, 0
+    for snap, d in docs:
+        recent, changed = [dict(r) for r in d.get("recent") or []], False
+        for k, r in enumerate(recent):
+            when = r.get("date")
+            if when:
                 pk = _pair_key(d.get("name", ""), r.get("opponent", ""))
-                from_event = next((c for (k, day), c in clips.items()
-                                   if k == pk and abs((day - when.date()).days) <= 2), [])
-                for c in from_event:
-                    changed |= _add_clip(r, c)
-                me, opp = d.get("name", ""), r.get("opponent", "")
-                won = me if r.get("outcome") == "W" else opp if r.get("outcome") == "L" else ""
-                for platform in ("youtube", "instagram"):
-                    if index and platform not in {c.get("source") for c in _clip_list(r)}:
-                        clip = clip_match(me, opp, when, _until(met, me, opp, when), index, won, platform)
-                        if clip:
-                            changed |= _add_clip(r, clip)
+                new = next((c for (key, day), c in clips.items()
+                            if key == pk and abs((day - when.date()).days) <= 2), [])
+                cands = plan.get((snap.id, k))
+                if cands:
+                    new = new + _pick(cands["youtube"], "youtube", region) + _pick(cands["instagram"], "instagram", region)
+                changed |= _merge_clips(r, new)
             rows_all += 1
             rows_with += 1 if r.get("clip") else 0
-            recent.append(r)
         if changed:
             batch.set(snap.reference, {"recent": recent}, merge=True)
             count += 1
@@ -3010,14 +3115,15 @@ def _purge_rows(rows, is_bad):
             r.pop("clip", None)
             r.pop("clips", None)
             if keep:
-                keep.sort(key=lambda c: c.get("source") != "youtube")
+                keep.sort(key=_clip_rank)
                 r["clip"], r["clips"] = keep[0], keep
     return changed
 
 
-def purge_bad_clips(db, index):
+def purge_bad_clips(db, index, region=None):
     """Rechecks every saved clip against the current rules (via its text in the
-    index) and removes the ones that aren't the fight (arrivals, walkouts...)."""
+    index) and removes the ones that aren't the fight (arrivals, walkouts...)
+    or that YouTube blocks in our viewers' countries."""
     text = {e["url"]: (e["letters"], e["platform"], e["video"]) for e in index}
     bad = {u for u, (letters, platform, video) in text.items()
            if not _clip_text_ok(letters, platform) or (platform == "instagram" and not video)}
@@ -3025,26 +3131,36 @@ def purge_bad_clips(db, index):
     # index covers but that isn't in it was a photo (or was deleted).
     ig_from = min((e["at"] for e in index if e["platform"] == "instagram"), default=None)
 
+    events = [(snap, snap.to_dict() or {}) for snap in db.collection("events").stream()]
+    fighters = [(snap, snap.to_dict() or {}) for snap in db.collection("fighters").stream()]
+    if region is not None:
+        region.check([_vid(c.get("url", "")) for _, d in events for f in d.get("fights") or [] for c in _clip_list(f)
+                      if c.get("source") == "youtube"]
+                     + [_vid(c.get("url", "")) for _, d in fighters for r in d.get("recent") or []
+                        for c in _clip_list(r) if c.get("source") == "youtube"])
+
     def is_bad(c):
         url = c.get("url", "")
         if url in bad:
+            return True
+        if region is not None and c.get("source") == "youtube" and not region.plays(url):
             return True
         at = c.get("at")
         return bool(c.get("source") == "instagram" and url not in text and ig_from and isinstance(at, datetime)
                     and at >= ig_from)
 
     removed = 0
-    for snap in db.collection("events").stream():
-        fights = [dict(f) for f in (snap.to_dict() or {}).get("fights") or []]
+    for snap, d in events:
+        fights = [dict(f) for f in d.get("fights") or []]
         before = sum(len(_clip_list(f)) for f in fights)
         if _purge_rows(fights, is_bad):
             snap.reference.set({"fights": fights}, merge=True)
             removed += before - sum(len(_clip_list(f)) for f in fights)
-    for snap in db.collection("fighters").stream():
-        recent = [dict(r) for r in (snap.to_dict() or {}).get("recent") or []]
+    for snap, d in fighters:
+        recent = [dict(r) for r in d.get("recent") or []]
         if _purge_rows(recent, is_bad):
             snap.reference.set({"recent": recent}, merge=True)
-    print(f"Clips recheck: removed {removed} clip(s) that weren't the fight itself")
+    print(f"Clips recheck: removed {removed} clip(s) (not the fight itself, or blocked in Arab countries)")
 
 
 def yt_clips(db, full=False, fighters=False):
@@ -3063,14 +3179,17 @@ def yt_clips(db, full=False, fighters=False):
     print(f"Official clips: {yt} YouTube and {len(index) - yt} Instagram videos in the index")
     if not index:
         return
-    if full or fighters:  # the backfill and the twice-a-day run recheck old clips
+    region = YTRegion(db)
+    every = full or fighters  # the backfill and the twice-a-day run: all events + recheck
+    if every:
         try:
-            purge_bad_clips(db, index)
+            purge_bad_clips(db, index, region)
         except Exception as e:
             print(f"Clips recheck failed: {type(e).__name__}")
-    yt_clips_for_events(db, index)
+    yt_clips_for_events(db, index, region, days=None if every else 45)
     if fighters:
-        yt_clips_for_fighters(db, index)
+        yt_clips_for_fighters(db, index, region)
+    region.save()
 
 
 def merge_fights(mine, wiki):
