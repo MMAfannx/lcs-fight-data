@@ -736,7 +736,10 @@ def fighter_photos(titles, width=400):
 # photos from Flickr, Wikimedia and others. Only licenses that allow
 # commercial use AND edits (we crop to a circle); never "NC" or "ND".
 OPENVERSE = "https://api.openverse.org/v1/images/"
-OPENVERSE_PER_RUN = 40  # free, no key: keep well under its daily limit
+# OFF (Oct 26): Flickr users sometimes upload UFC/Getty photos marked as free,
+# and a bot can't tell. Photos it already added are removed (source
+# "openverse"). Could come back later only with approval in the admin screen.
+OPENVERSE_PER_RUN = 0
 _OV_LICENSES = {"by": "CC BY", "by-sa": "CC BY-SA", "cc0": "CC0", "pdm": "Public domain"}
 _OV_NOT_SOLO = re.compile(r"\bvs?\.?\b|\band\b|&|\bwith\b|\bfans?\b|poster|logo|signature|crowd|team|"
                           r"belt\b.*\bbelt|\bfight\b.*\bfight", re.I)
@@ -1371,7 +1374,8 @@ def sync_fighters(db, with_records=False):
     batch, count, written, seen = db.batch(), 0, 0, set()
     # One small document with every photo, so event syncs can put photos on
     # fights (Results tab) with a single read instead of one per fighter.
-    photo_map = {fid: d["photo"] for fid, d in existing.items() if d.get("photo")}
+    photo_map = {fid: d["photo"] for fid, d in existing.items()
+                 if d.get("photo") and d["photo"].get("source") != "openverse"}
     ov_left = OPENVERSE_PER_RUN
     month_ago = datetime.now(timezone.utc) - timedelta(days=30)
     for f in roster:
@@ -1400,6 +1404,8 @@ def sync_fighters(db, with_records=False):
                "active": True}
         # Free photo (link + credit) if Wikipedia has one; keep the old one otherwise.
         doc["photo"] = photos.get(link) or old.get("photo") or None
+        if doc["photo"] and doc["photo"].get("source") == "openverse":
+            doc["photo"] = None  # Openverse is off: remove the photos it added
         # Still none: try Openverse once a month per fighter (a few dozen a run).
         searched = old.get("photoSearched")
         if not doc["photo"] and ov_left > 0 and not (isinstance(searched, datetime) and searched > month_ago):
@@ -2364,6 +2370,10 @@ IG_TARGET = "ufc"
 GRAPH = "https://graph.facebook.com/v26.0"
 UFC_YT_CHANNEL = "UCvgfXK4nTYKudb0rFR6noLA"
 CLIP_HOURS = 48                        # look for clips this long after an event starts
+# Clips count from the start of the prelims (~6 hours before the main card time
+# saved as the event start), never earlier: the day before, UFC posts old
+# "Free Fight" videos of that weekend's fighters, which aren't this fight.
+CLIP_EARLIEST = timedelta(hours=6)
 _clip_cache = {}
 
 # Words in YouTube titles that mean "not the fight itself".
@@ -2494,7 +2504,7 @@ def _best_clip(fight, start, posts, until):
     Instagram must be a video, and never arrivals/walkouts/interviews."""
     best = None
     for p in posts:
-        if not (start - timedelta(hours=1) <= p["at"] <= until):
+        if not (start - CLIP_EARLIEST <= p["at"] <= until):
             continue
         if p["source"] == "instagram" and not p["video"]:
             continue
@@ -2841,7 +2851,7 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube"):
     out within 4 days (YouTube: with a finish word; Instagram: a video/Reel).
     Instagram posts must be videos (fight graphics are photos)."""
     out = []
-    lo = when - timedelta(days=1)
+    lo = when - CLIP_EARLIEST
     soon = when + timedelta(days=4)
     ka, kb = _name_keys(a), _name_keys(b)
     wa, wb = bool(winner) and norm(winner) == norm(a), bool(winner) and norm(winner) == norm(b)
@@ -3174,12 +3184,15 @@ def yt_clips_for_fighters(db, index, region=None):
           + (f" ({100 * rows_with // rows_all}%)" if rows_all else ""))
 
 
-def _purge_rows(rows, is_bad):
-    """Removes the clips is_bad(clip) rejects from fights / last-5 rows. True if changed."""
+def _purge_rows(rows, is_bad, when=None):
+    """Removes the clips is_bad(clip) rejects from fights / last-5 rows (and,
+    with 'when', clips posted before that card started). True if changed."""
     changed = False
     for r in rows:
+        start = when or r.get("date")
         clips = _clip_list(r)
-        keep = [c for c in clips if not is_bad(c)]
+        keep = [c for c in clips if not is_bad(c) and not (
+            isinstance(start, datetime) and isinstance(c.get("at"), datetime) and c["at"] < start - CLIP_EARLIEST)]
         if len(keep) != len(clips):
             changed = True
             r.pop("clip", None)
@@ -3223,14 +3236,14 @@ def purge_bad_clips(db, index, region=None):
     for snap, d in events:
         fights = [dict(f) for f in d.get("fights") or []]
         before = sum(len(_clip_list(f)) for f in fights)
-        if _purge_rows(fights, is_bad):
+        if _purge_rows(fights, is_bad, d.get("start")):
             snap.reference.set({"fights": fights}, merge=True)
             removed += before - sum(len(_clip_list(f)) for f in fights)
     for snap, d in fighters:
         recent = [dict(r) for r in d.get("recent") or []]
         if _purge_rows(recent, is_bad):
             snap.reference.set({"recent": recent}, merge=True)
-    print(f"Clips recheck: removed {removed} clip(s) (not the fight itself, or blocked in Arab countries)")
+    print(f"Clips recheck: removed {removed} clip(s) (not the fight itself, posted before the card, or blocked in Arab countries)")
 
 
 def yt_clips(db, full=False, fighters=False):
@@ -3266,7 +3279,7 @@ def yt_clips(db, full=False, fighters=False):
 # Finds the fighters a news post is about (names in its title or summary, in
 # Arabic or English) and saves them with their free photo on the post, so the
 # app can show a fighters cover. Each post is checked once (newsTagged).
-NEWS_TAG_VERSION = 1
+NEWS_TAG_VERSION = 2  # 2: re-tag after Openverse photos were removed
 
 
 def _ar_norm(text):
