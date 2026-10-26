@@ -1926,6 +1926,24 @@ def history_question(day, rng, extra=0):
     return _kind("history", _q(rng, qa, qe, ans, wrong, ea, ee))
 
 
+def quiz_reminder(db, did):
+    """One gentle reminder a week: Monday evening Arab time (18:00-22:59, UTC+3),
+    never at midnight when the new quiz is made, never twice."""
+    local = datetime.now(timezone.utc) + timedelta(hours=3)
+    if local.weekday() != 0 or not 18 <= local.hour <= 22:
+        return
+    ref = db.collection("meta").document("quizReminder")
+    snap = ref.get()
+    if snap.exists and (snap.to_dict() or {}).get("day") == did:
+        return
+    ref.set({"day": did})
+    try:
+        send_alert("🧠 كويز اليوم جاهز!", "3 أسئلة في 30 ثانية · حافظ على سلسلتك 🔥",
+                   "🧠 Today's quiz is ready!", "3 questions in 30 seconds · keep your streak 🔥")
+    except Exception as e:
+        print(f"  quiz alert failed: {e}")
+
+
 def sync_quiz(db, force=False):
     """A new 3-question quiz every day: 1 UFC history question + 1 about the
     latest events + 1 about champions/nicknames/legends. Saved with the day
@@ -1937,6 +1955,7 @@ def sync_quiz(db, force=False):
     current = db.collection("quizzes").document("current").get()
     already = current.exists and (current.to_dict() or {}).get("weekId") == did
     if already and not force:
+        quiz_reminder(db, did)
         return
     rng = random.Random(did)
     auto = build_quiz(db, rng)
@@ -1968,12 +1987,7 @@ def sync_quiz(db, force=False):
     db.collection("quizzes").document(did).set(doc)
     db.collection("quizzes").document("current").set(doc)
     print(f"Quiz: {len(picked)} questions for {did}")
-    if day.weekday() == 0 and not already:  # Mondays only, once: one gentle reminder a week
-        try:
-            send_alert("🧠 كويز اليوم جاهز!", "3 أسئلة في 30 ثانية · حافظ على سلسلتك 🔥",
-                       "🧠 Today's quiz is ready!", "3 questions in 30 seconds · keep your streak 🔥")
-        except Exception as e:
-            print(f"  quiz alert failed: {e}")
+    quiz_reminder(db, did)
 
 # ---------------------------------------------------------------- predictions
 # Fans save picks privately in picks/{eventId}_{uid}. About 12 hours after an
