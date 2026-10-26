@@ -888,6 +888,31 @@ def send_alert(title_ar, body_ar, title_en, body_en):
     print(f"  alert sent: {title_en} / {body_en}")
 
 
+# Alert bookkeeping ("this alert was already sent") lives in eventState/{id},
+# NOT in the event document: every phone watching an event re-downloads it on
+# each change, so writing bookkeeping there cost one read per phone per write.
+# Older events still have these fields on the event itself; both are read.
+_states = {}
+
+
+def _state(ref):
+    if ref.id not in _states:
+        from firebase_admin import firestore
+        snap = firestore.client().collection("eventState").document(ref.id).get()
+        _states[ref.id] = (snap.to_dict() or {}) if snap.exists else {}
+    return _states[ref.id]
+
+
+def _save_state(ref, data):
+    from firebase_admin import firestore
+    _state(ref).update(data)
+    firestore.client().collection("eventState").document(ref.id).set(data, merge=True)
+
+
+def _sent(ref, doc, key):
+    return bool(doc.get(key) or _state(ref).get(key))
+
+
 def check_alerts(ref, doc):
     """Event starting within the hour, and main event result. Each is sent once."""
     if MODE == "backfill":
@@ -908,7 +933,7 @@ def check_alerts(ref, doc):
 
     # 1) Starting soon: from 70 minutes before until 50 minutes after the start,
     # a 2-hour window, so even the every-2-hours check can't miss it.
-    if not doc.get("alertStartSent") and -50 <= minutes <= 70:
+    if -50 <= minutes <= 70 and not _sent(ref, doc, "alertStartSent"):
         m = max(0, round(minutes))
         body_en = body_ar = ""
         if main:
@@ -919,10 +944,10 @@ def check_alerts(ref, doc):
                        f"⏰ {name_en} starts in {m} minutes", body_en)
         else:
             send_alert(f"🔴 {name_ar} بدأ الآن", body_ar, f"🔴 {name_en} is starting now", body_en)
-        ref.set({"alertStartSent": True}, merge=True)
+        _save_state(ref, {"alertStartSent": True})
 
     # 2) Main event result, only for events from the last 36 hours.
-    if main and main.get("winner") and not doc.get("alertResultSent") and -36 * 60 <= minutes <= 0:
+    if main and main.get("winner") and -36 * 60 <= minutes <= 0 and not _sent(ref, doc, "alertResultSent"):
         a, b, a_ar, b_ar = names(main)
         w = main["winner"]
         how_en, how_ar = main.get("method", ""), method_ar(main.get("method", ""))
@@ -935,7 +960,7 @@ def check_alerts(ref, doc):
             body_ar = f"{a_ar} ضد {b_ar}: {how_ar or method_ar(w)}"
         send_alert(f"🏆 نتيجة النزال الرئيسي · {name_ar}", body_ar,
                    f"🏆 Main event result · {name_en}", body_en)
-        ref.set({"alertResultSent": True}, merge=True)
+        _save_state(ref, {"alertResultSent": True})
 
 
 def send_fight_alert(fight_id, title_ar, body_ar, title_en, body_en, bell=False):
@@ -973,7 +998,7 @@ def check_fight_alerts(ref, doc):
     now = datetime.now(timezone.utc)
     if not start - timedelta(hours=6) <= now <= start + timedelta(hours=36):
         return
-    sent = set(doc.get("fightAlertsSent") or [])
+    sent = set(doc.get("fightAlertsSent") or []) | set(_state(ref).get("fightAlertsSent") or [])
     before = len(sent)
     main = next((f for f in fights if f.get("isMain")), fights[0])
     name_en = doc.get("name", "UFC")
@@ -1023,21 +1048,21 @@ def check_fight_alerts(ref, doc):
             sent.update({f"start:{fid}", f"live:{fid}"})  # finished: never send "starting" afterwards
 
         if len(sent) != before:  # save after each fight, so a failure can't cause repeats
-            ref.set({"fightAlertsSent": sorted(sent)}, merge=True)
+            _save_state(ref, {"fightAlertsSent": sorted(sent)})
             before = len(sent)
 
 
 def check_pick_reminder(ref, doc):
     """'Picks lock soon' reminder, sent once, 3 to 9 hours before the start
     (a 6-hour window, so the every-2-hours run can't miss it)."""
-    if MODE == "backfill" or doc.get("pickReminderSent"):
+    if MODE == "backfill":
         return
     start = doc.get("start")
     fights = doc.get("fights") or []
     if not start or not fights:
         return
     minutes = (start - datetime.now(timezone.utc)).total_seconds() / 60
-    if not 3 * 60 <= minutes <= 9 * 60:
+    if not 3 * 60 <= minutes <= 9 * 60 or _sent(ref, doc, "pickReminderSent"):
         return
     h = max(3, round(minutes / 60))
     name_en = doc.get("name", "UFC")
@@ -1046,7 +1071,7 @@ def check_pick_reminder(ref, doc):
                "اختر الفائزين الآن واصعد في الترتيب!",
                f"🎯 Picks lock in {h} hours · {name_en}",
                "Make your picks now and climb the leaderboard!")
-    ref.set({"pickReminderSent": True}, merge=True)
+    _save_state(ref, {"pickReminderSent": True})
 
 
 def update_pick_split(db, ref, event_id, doc):
