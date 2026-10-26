@@ -1989,6 +1989,7 @@ def sync_quiz(db, force=False):
     print(f"Quiz: {len(picked)} questions for {did}")
     quiz_reminder(db, did)
 
+
 # ---------------------------------------------------------------- predictions
 # Fans save picks privately in picks/{eventId}_{uid}. About 12 hours after an
 # event starts, the bot scores each person once: 1 point per correct pick,
