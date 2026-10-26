@@ -1703,6 +1703,8 @@ def build_fighter_index(db):
             row["active"] = True
         if d.get("legend"):
             row["legend"] = True
+        if d.get("arab"):
+            row["arab"] = True  # green Arab tag in search results
         if photo.get("url"):
             row["photo"] = {"url": photo["url"]}
         rows.append(row)
