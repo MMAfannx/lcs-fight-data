@@ -1800,6 +1800,13 @@ def _q(rng, q_ar, q_en, correct, wrong, explain_ar, explain_en):
             "explain_ar": explain_ar, "explain_en": explain_en}
 
 
+def _kind(kind, q):
+    """Marks a question 'history', 'recent' or 'champs' (the app shows a tag)."""
+    if q:
+        q["kind"] = kind
+    return q
+
+
 def _nm(name, name_ar):
     return (name_ar or name, name)
 
@@ -1827,10 +1834,10 @@ def build_quiz(db, rng):
         w = _nm(f["fighterA"], f.get("fighterAAr")) if w_is_a else _nm(f["fighterB"], f.get("fighterBAr"))
         l = _nm(f["fighterB"], f.get("fighterBAr")) if w_is_a else _nm(f["fighterA"], f.get("fighterAAr"))
         ev_ar, ev_en = e.get("nameAr") or e.get("name", ""), e.get("name", "")
-        questions.append(_q(rng, f"من فاز بالنزال الرئيسي في {ev_ar}؟", f"Who won the main event of {ev_en}?",
+        questions.append(_kind("recent", _q(rng, f"من فاز بالنزال الرئيسي في {ev_ar}؟", f"Who won the main event of {ev_en}?",
                             w, [l] + pick_others({w[1], l[1]}, names, 2),
                             f"{w[0]} تغلّب على {l[0]} · {method_ar(f.get('method', ''))}",
-                            f"{w[1]} def. {l[1]} · {f.get('method', '')}"))
+                            f"{w[1]} def. {l[1]} · {f.get('method', '')}")))
 
     # 2. Who is the current champion of a division?
     snap = db.collection("rankings").document("current").get()
@@ -1843,9 +1850,9 @@ def build_quiz(db, rng):
         if champ and len(others) >= 3 and division:
             c = _nm(champ["name"], champ.get("nameAr"))
             wrong = [_nm(r["name"], r.get("nameAr")) for r in rng.sample(others, 3)]
-            questions.append(_q(rng, f"من هو بطل {DIV_AR.get(division, division)} الحالي في UFC؟",
+            questions.append(_kind("champs", _q(rng, f"من هو بطل {DIV_AR.get(division, division)} الحالي في UFC؟",
                                 f"Who is the current UFC {division} champion?", c, wrong,
-                                f"{c[0]} هو بطل {DIV_AR.get(division, division)}.", f"{c[1]} holds the {division} title."))
+                                f"{c[0]} هو بطل {DIV_AR.get(division, division)}.", f"{c[1]} holds the {division} title.")))
             break
 
     # 3. How did a recent fight end?
@@ -1862,10 +1869,10 @@ def build_quiz(db, rng):
         w = _nm(f["fighterA"], f.get("fighterAAr")) if w_is_a else _nm(f["fighterB"], f.get("fighterBAr"))
         l = _nm(f["fighterB"], f.get("fighterBAr")) if w_is_a else _nm(f["fighterA"], f.get("fighterAAr"))
         right = kinds[kind(f["method"])]
-        questions.append(_q(rng, f"كيف فاز {w[0]} على {l[0]}؟", f"How did {w[1]} beat {l[1]}?",
+        questions.append(_kind("recent", _q(rng, f"كيف فاز {w[0]} على {l[0]}؟", f"How did {w[1]} beat {l[1]}?",
                             right, [v for v in kinds.values() if v != right],
                             f"{method_ar(f['method'])} · {e.get('nameAr') or e.get('name', '')}",
-                            f"{f['method']} · {e.get('name', '')}"))
+                            f"{f['method']} · {e.get('name', '')}")))
 
     # 4. Which fighter has this nickname?
     nicknamed = [f for f in active if 2 < len(f.get("nickname", "")) < 30]
@@ -1874,10 +1881,10 @@ def build_quiz(db, rng):
         same = [_nm(o["name"], o.get("nameAr")) for o in active
                 if o.get("division") == f.get("division") and o.get("name") != f.get("name")]
         me = _nm(f["name"], f.get("nameAr"))
-        questions.append(_q(rng, f"من هو المقاتل الملقب بـ \"{f['nickname']}\"؟",
+        questions.append(_kind("champs", _q(rng, f"من هو المقاتل الملقب بـ \"{f['nickname']}\"؟",
                             f"Which fighter is nicknamed \"{f['nickname']}\"?", me,
                             rng.sample(same, min(3, len(same))),
-                            f"\"{f['nickname']}\" هو لقب {me[0]}.", f"\"{f['nickname']}\" is {me[1]}'s nickname."))
+                            f"\"{f['nickname']}\" هو لقب {me[0]}.", f"\"{f['nickname']}\" is {me[1]}'s nickname.")))
 
     # 5. A legend's career record
     legends = [f for f in fighters if f.get("legend") and re.match(r"^\d+–\d+", f.get("careerRecord", ""))]
@@ -1889,34 +1896,83 @@ def build_quiz(db, rng):
         variants.discard(f"{w}–{l}")
         me = _nm(f["name"], f.get("nameAr"))
         right = (f"{w}–{l}", f"{w}–{l}")
-        questions.append(_q(rng, f"ما هو السجل الاحترافي للأسطورة {me[0]} (فوز–خسارة)؟",
+        questions.append(_kind("champs", _q(rng, f"ما هو السجل الاحترافي للأسطورة {me[0]} (فوز–خسارة)؟",
                             f"What was legend {me[1]}'s pro record (wins–losses)?", right,
                             [(v, v) for v in rng.sample(sorted(variants), 3)],
-                            f"سجل {me[0]}: {f['careerRecord']}.", f"{me[1]}'s record: {f['careerRecord']}."))
+                            f"سجل {me[0]}: {f['careerRecord']}.", f"{me[1]}'s record: {f['careerRecord']}.")))
 
     return [q for q in questions if q]
 
 
+QUIZ_START = datetime(2026, 10, 27).date()  # day 0 of the history question order
+
+
+def quiz_day(now=None):
+    """The quiz day in Arab time (UTC+3), e.g. '2026-10-27'."""
+    return ((now or datetime.now(timezone.utc)) + timedelta(hours=3)).date()
+
+
+def history_question(day, rng, extra=0):
+    """One UFC history question a day, in a fixed shuffled order: a question
+    only comes back after the whole bank has been used. extra=1/2: the extra
+    questions of a quiet day, from a second order (a fresh block of spares
+    each day, so consecutive days don't share them)."""
+    from quiz_bank import HISTORY
+    n = (day - QUIZ_START).days
+    order = list(range(len(HISTORY)))
+    random.Random("lcs-history-extra" if extra else "lcs-history").shuffle(order)
+    i = order[(29 * n + extra - 1 if extra else n) % len(HISTORY)]
+    qa, qe, ans, wrong, ea, ee = HISTORY[i]
+    return _kind("history", _q(rng, qa, qe, ans, wrong, ea, ee))
+
+
 def sync_quiz(db, force=False):
-    today = datetime.now(timezone.utc)
-    wid = week_id(today)
+    """A new 3-question quiz every day: 1 UFC history question + 1 about the
+    latest events + 1 about champions/nicknames/legends. Saved with the day
+    in 'weekId' (the app's streak counts consecutive quiz periods, so older
+    app versions keep working and count days). No daily notification: only
+    a reminder on Mondays."""
+    day = quiz_day()
+    did = day.isoformat()
     current = db.collection("quizzes").document("current").get()
-    if not force and current.exists and (current.to_dict() or {}).get("weekId") == wid:
+    if not force and current.exists and (current.to_dict() or {}).get("weekId") == did:
         return
-    questions = build_quiz(db, random.Random(wid))
-    if len(questions) < 3:
-        print(f"Quiz: only {len(questions)} questions possible, skipped")
-        return
-    doc = {"weekId": wid, "prevWeekId": week_id(today - timedelta(days=7)),
-           "questions": questions, "created": today}
-    db.collection("quizzes").document(wid).set(doc)
+    rng = random.Random(did)
+    auto = build_quiz(db, rng)
+    # Questions used in the last 7 days aren't repeated.
+    used = set()
+    for k in range(1, 8):
+        old = db.collection("quizzes").document((day - timedelta(days=k)).isoformat()).get()
+        for q in (old.to_dict() or {}).get("questions", []) if old.exists else []:
+            used.add(q.get("q_en"))
+    # History questions: today's, then spares (none used in the last 7 days).
+    history = []
+    for extra in range(0, 30):
+        q = history_question(day, rng, extra)
+        if q and q["q_en"] not in used and q["q_en"] not in {h["q_en"] for h in history}:
+            history.append(q)
+    picked = history[:1]
+    for kind in ("recent", "champs"):
+        options = [q for q in auto if q.get("kind") == kind and q.get("q_en") not in used]
+        if options:
+            picked.append(rng.choice(options))
+    # Not enough recent/champion questions (quiet weeks): more history.
+    for q in history[1:]:
+        if len(picked) >= 3:
+            break
+        picked.append(q)
+    picked = [q for q in picked if q]
+    doc = {"weekId": did, "prevWeekId": (day - timedelta(days=1)).isoformat(), "daily": True,
+           "questions": picked, "created": datetime.now(timezone.utc)}
+    db.collection("quizzes").document(did).set(doc)
     db.collection("quizzes").document("current").set(doc)
-    print(f"Quiz: {len(questions)} questions for {wid}")
-    try:
-        send_alert("🧠 كويز الأسبوع جاهز!", "أسئلة جديدة عن أحداث UFC الأخيرة. اختبر معلوماتك!",
-                   "🧠 This week's quiz is ready!", "New questions about the latest UFC action. Test yourself!")
-    except Exception as e:
-        print(f"  quiz alert failed: {e}")
+    print(f"Quiz: {len(picked)} questions for {did}")
+    if day.weekday() == 0:  # Mondays only: one gentle reminder a week
+        try:
+            send_alert("🧠 كويز اليوم جاهز!", "3 أسئلة في 30 ثانية · حافظ على سلسلتك 🔥",
+                       "🧠 Today's quiz is ready!", "3 questions in 30 seconds · keep your streak 🔥")
+        except Exception as e:
+            print(f"  quiz alert failed: {e}")
 
 # ---------------------------------------------------------------- predictions
 # Fans save picks privately in picks/{eventId}_{uid}. About 12 hours after an
@@ -3628,9 +3684,9 @@ def main():
         except Exception as e:
             print(f"Leaderboard failed: {e}")
     now_utc = datetime.now(timezone.utc)
-    if MODE == "full" and db is not None and now_utc.weekday() == 0:
+    if MODE in ("full", "fightnight") and db is not None:
         try:
-            sync_quiz(db)  # only creates it once per week
+            sync_quiz(db)  # only creates one per day
         except Exception as e:
             print(f"Quiz failed: {e}")
     if MODE == "full" and now_utc.weekday() == 0 and now_utc.hour == 0:
