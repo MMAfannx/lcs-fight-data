@@ -2647,10 +2647,12 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "lockerroom", "faceoff", "staredown", "weighin", "weighs", "mediaday", "pressconference",
                    "presser", "countdown", "embedded", "preview", "fightweek", "workout", "whowins",
                    "whowillwin", "whosgot", "prediction", "predict", "makeyourpick", "yourpicks", "isofficial",
-                   "booked", "announce", "comingup", "upnext", "livenow", "getready", "buildup", "trailer",
+                   "booked", "announce", "comingup", "upnext", "getready", "buildup", "trailer",
                    "interview", "postfight", "prefight", "reaction", "reacts", "callsout", "callout",
                    "behindthescenes", "entrance", "hotel", "airport", "landed", "fanfest", "autograph",
-                   "photoshoot", "mediascrum", "scrum", "ceremonial", "openworkout", "sparring", "training")
+                   "photoshoot", "mediascrum", "scrum", "ceremonial", "openworkout", "sparring", "training",
+                   "reacting", "celly", "celebrat", "family", "careersofar", "grateful", "nextfor",
+                   "whatsnext", "whatisnext", "facenext", "fightnext")
 # Words that show the post is about the fight's action or result.
 _CLIP_FIGHT = ("knockout", "knocks", "knocked", "tko", "submission", "submits", "submitted", "finish",
                "highlight", "decision", "defeat", "beats", "victory", "andstill", "andnew", "newchamp",
@@ -2685,8 +2687,8 @@ def _best_clip(fight, start, posts, until):
         winner = fight.get("winner", "")
         if a and b:
             score = 3
-        elif not p.get("both_required") and winner and (
-                (a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))):
+        elif winner and ((a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))) and (
+                not p.get("both_required") or any(w in p["text"] for w in _YT_RESULT)):
             score = 1
         else:
             continue
@@ -2830,6 +2832,7 @@ YT_CHANNELS = [
     ("@canalcombate", ("Combate", "Canal Combate"), True),
     ("@tsn", ("TSN",), True),
 ]
+YT_INDEX_V = 2   # raise when _yt_keep changes: UFC's own channels are read again once
 YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
                  "betting", "picks", "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa",
@@ -2841,6 +2844,14 @@ _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full even
 _YT_FINISH = ("knockout", "knocks out", "knocked out", " ko", "tko", "submission", "submits", "finish",
               "highlight", "free fight", "full fight", "nocaut", "finaliza", "mejores momentos",
               "melhores momentos", "pelea completa", "luta completa")
+# Result words (letters only) in UFC's own fight-night Shorts that name only
+# the winner: "Grant Dawson takes the W", "Yakhyaev defeats Krylov", "PETR YAN AND STILL".
+_YT_RESULT = ("takesthew", "getsthew", "grabsthew", "takestheud", "takesthedecision", "getsthedecision",
+              "decisionw", "unanimous", "splitdecision", "winsit", "wins", "takesthewin", "getsthewin",
+              "defeats", "beats", "andstill", "stillthechamp", "andnew", "getsthejobdone", "getsitdone",
+              "jobdone", "finishes", "stops", "stoppage", "knocksout", "tko", "taps", "makeshimtap",
+              "madehimtap", "madehimquit", "choke", "armbar", "guillotine", "kimura", "submission",
+              "knockout", "roundfinish", "rdfinish")
 _YT_GOOD = (("fullfight", 4), ("freefight", 4), ("peleacompleta", 4), ("lutacompleta", 4),
             ("highlight", 3), ("mejoresmomentos", 3), ("melhoresmomentos", 3),
             ("knockout", 2), ("ko", 1), ("submission", 2), ("finish", 2), ("nocaut", 2),
@@ -2935,7 +2946,8 @@ def _yt_keep(title, ufc_only):
         return False
     if ufc_only and "ufc" not in low:
         return False
-    return " vs" in low or " v " in low or any(w in low for w in _YT_FINISH)
+    return (" vs" in low or " v " in low or any(w in low for w in _YT_FINISH)
+            or any(w in _letters(title) for w in _YT_RESULT))
 
 
 def yt_load_index(db, cid, coll="ytIndex"):
@@ -2973,6 +2985,13 @@ def yt_update_index(db, full=False):
     for cid, title, ufc_only, uploads in channels:
         meta, rows = yt_load_index(db, cid)
         known = {r.split("|", 2)[0] for r in rows}
+        # UFC's own channels: read every upload once more when the title rules
+        # change (YT_INDEX_V), so older videos that now pass get in. Resumable.
+        reindex = not ufc_only and int(meta.get("v") or 1) < YT_INDEX_V
+        if reindex:
+            meta.update({"complete": False, "v": YT_INDEX_V})
+            meta.pop("resume", None)
+            print(f"  YouTube index {title}: reading all uploads again (new title rules)")
         complete = bool(meta.get("complete"))
         token = None if complete else meta.get("resume")
         newest = int(meta.get("newest") or 0)
@@ -3013,7 +3032,7 @@ def yt_update_index(db, full=False):
             print(f"  YouTube quota used up during {title}: saved progress, continues next run")
         except Exception as e:
             print(f"  YouTube index {title} stopped: {type(e).__name__}")
-        if new_rows or complete != bool(meta.get("complete")) or token != meta.get("resume"):
+        if reindex or new_rows or complete != bool(meta.get("complete")) or token != meta.get("resume"):
             rows = new_rows + rows
             meta.update({"title": title, "complete": complete, "newest": top if complete else newest})
             if complete:
@@ -3026,7 +3045,7 @@ def yt_update_index(db, full=False):
             vid, ts, letters = r.split("|", 2)
             index.append({"url": f"https://www.youtube.com/watch?v={vid}", "platform": "youtube",
                           "at": datetime.fromtimestamp(int(ts), timezone.utc), "letters": letters,
-                          "label": title, "video": True})
+                          "label": title, "video": True, "ufc": not ufc_only})
     return index
 
 
@@ -3059,9 +3078,13 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube"):
         if not (ma or mb) or not _clip_text_ok(letters, platform):
             continue
         score = _yt_score(letters)
+        winner_only = (ma and wa) or (mb and wb)
         if ma and mb:
             tier = 0
-        elif e["at"] <= soon and (platform == "instagram" or score >= 2) and ((ma and wa) or (mb and wb)):
+        elif e["at"] <= soon and (platform == "instagram" or score >= 2) and winner_only:
+            tier = 1
+        elif (platform == "youtube" and e.get("ufc") and winner_only and e["at"] <= when + timedelta(hours=18)
+              and any(w in letters for w in _YT_RESULT)):
             tier = 1
         else:
             continue
@@ -3088,7 +3111,9 @@ def yt_match(a, b, when, until, index, winner=""):
 # goes back in time, so past fights get Reels too. An account is used only if
 # it exists with a big following; the log lists them so the owner can confirm
 # each has Instagram's blue tick.
-IG_ACCOUNTS = ("ufc", "ufc_brasil", "ufcespanol", "ufceurope", "ufcindia", "ufcfightpass", "espnmma")
+IG_ACCOUNTS = ("ufc", "ufcespanol", "ufceurope", "ufcindia", "ufcfightpass", "espnmma")
+# Accounts whose Reels don't play in our viewers' countries: their clips are removed.
+IG_BLOCKED = {"@ufc_brasil"}
 IG_MIN_FOLLOWERS = 300_000
 IG_PAGES_PER_RUN = 40  # 50 posts per page, per account
 IG_CALLS_PER_RUN = 120  # Meta allows ~200 calls an hour; leave room for live clips
@@ -3315,12 +3340,17 @@ def yt_clips_for_events(db, index, region=None, days=None):
         if snap.id in by_event:
             done = [f for f in fights if f.get("winner")]
             ev_have = sum(1 for f in done if f.get("clip"))
+            ev_before = sum(1 for f in doc.get("fights") or [] if f.get("winner") and f.get("clip"))
             multi += sum(1 for f in done if len(_clip_list(f)) > 1)
             have, total = have + ev_have, total + len(done)
-            report.append((doc["start"], doc.get("name", snap.id), ev_have, len(done)))
+            report.append((doc["start"], doc.get("name", snap.id), ev_have, len(done), ev_before))
     report.sort(reverse=True)
-    for start, name, h, t in report[:12]:
-        print(f"  {name}: {h}/{t} fights have a clip")
+    for start, name, h, t, b in report[:12]:
+        print(f"  {name}: {h}/{t} fights have a clip (before this run: {b})")
+    last = report[:25]
+    if last:
+        print(f"Last {len(last)} events: {sum(r[4] for r in last)}/{sum(r[3] for r in last)} fights had a clip before, "
+              f"{sum(r[2] for r in last)}/{sum(r[3] for r in last)} now")
     print(f"Official clips: {found} new. Finished fights checked: {have}/{total} have a clip"
           + (f" ({100 * have // total}%)" if total else "") + f", {multi} with a choice of sources")
 
@@ -3418,7 +3448,7 @@ def purge_bad_clips(db, index, region=None):
 
     def is_bad(c):
         url = c.get("url", "")
-        if url in bad:
+        if url in bad or c.get("channel") in IG_BLOCKED:
             return True
         if region is not None and c.get("source") == "youtube" and not region.plays(url):
             return True
