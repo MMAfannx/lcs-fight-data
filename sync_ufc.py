@@ -2537,7 +2537,9 @@ def live_watch(active):
 # The app's "Watch the clip" button opens it in Instagram / YouTube.
 IG_TOKEN = os.environ.get("IG_PAGE_TOKEN", "").strip()
 IG_USER_ID = "17841422164804906"      # @historygoneweird23, linked to our Meta app
-IG_TARGET = "ufceurope"  # fight night: its Reels play in Arab countries (many @ufc Reels don't)
+IG_TARGET = "ufceurope"
+# Fight night: these accounts' Reels play in Arab countries (many @ufc Reels don't).
+IG_LIVE = ("ufceurope", "ufcmena")
 GRAPH = "https://graph.facebook.com/v26.0"
 UFC_YT_CHANNEL = "UCvgfXK4nTYKudb0rFR6noLA"
 CLIP_HOURS = 48                        # look for clips this long after an event starts
@@ -2557,6 +2559,64 @@ def _letters(text):
     text = unicodedata.normalize("NFKD", text or "")
     text = "".join(c for c in text if not unicodedata.combining(c))
     return re.sub(r"[^a-z]", "", text.lower())
+
+
+_NAME_SUFFIX = {"jr", "sr", "ii", "iii", "iv"}
+
+
+def _words(text):
+    """'Pérez KO'd Yan! بالضربة القاضية' -> 'perez ko d yan بالضربه القاضيه': lowercase
+    Latin + normalized Arabic words, accents/harakat removed, one space between words."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", text or "")
+    t = "".join(ch for ch in t if not unicodedata.combining(ch)).lower()
+    t = _ar_norm(t).replace("ؤ", "و").replace("ئ", "ي")
+    return " ".join(re.findall(r"[a-z]+|[\u0621-\u063a\u0641-\u064a]+", t))
+
+
+def _flat(words):
+    return (words or "").replace(" ", "")
+
+
+def _card_count(card):
+    """Fight card [(English name, Arabic name)] -> how many fighters on it use each word."""
+    from collections import Counter
+    cnt = Counter()
+    for en, ar in card or []:
+        for w in set(_words(strip_title(en or "")).split()) | set(_words(ar or "").split()):
+            cnt[w] += 1
+    return cnt
+
+
+def _short_names(name, name_ar=""):
+    """Last name (English and Arabic) for card-unique matching: 'Petr Yan' -> ['yan', 'يان']."""
+    out = []
+    for w in (_words(strip_title(name or "")).split(), _words(name_ar or "").split()):
+        w = [x for x in w if x not in _NAME_SUFFIX]
+        if w and len(w[-1]) >= 3:
+            out.append(w[-1])
+    return out
+
+
+# Whole words that mean a compilation of many fights, not this one.
+_COMPILATION = {"every", "career", "greatest", "compilation", "top", "best", "ever", "all-time", "alltime"}
+
+
+def _mentions_entry(letters, words, name, name_ar="", card_cnt=None, near=False):
+    """Does a title/caption name this fighter? Full name or a long (5+ letter)
+    last name anywhere; the full Arabic name as whole words; and, only for
+    official UFC accounts during the event week, a last name of 3+ letters
+    (English or Arabic) that no other fighter on that card has, as a whole word."""
+    if any(k in letters for k in _name_keys(name)):
+        return True
+    ws = f" {words} "
+    ar = _words(name_ar)
+    if ar and " " in ar and f" {ar} " in ws:
+        return True
+    if not (card_cnt and near):
+        return False
+    toks = set(words.split())
+    return any(card_cnt.get(w) == 1 and w in toks for w in _short_names(name, name_ar))
 
 
 def _name_keys(name):
@@ -2583,30 +2643,31 @@ def _parse_time(value):
 
 
 def _ig_recent():
-    """@ufceurope's latest public posts as dicts (text, url, at, video)."""
+    """Latest public posts of the fight-night Instagram accounts (IG_LIVE)."""
     if "ig" in _clip_cache:
         return _clip_cache["ig"]
     out = []
-    if IG_TOKEN:
+    for username in (IG_LIVE if IG_TOKEN else ()):
         fields = ("business_discovery.username(%s){media.limit(40)"
-                  "{caption,permalink,media_type,media_product_type,timestamp}}" % IG_TARGET)
+                  "{caption,permalink,media_type,media_product_type,timestamp}}" % username)
         try:
             r = requests.get(f"{GRAPH}/{IG_USER_ID}", params={"fields": fields, "access_token": IG_TOKEN},
                              timeout=30)
             data = r.json()
             if r.status_code != 200:
                 err = (data.get("error") or {}) if isinstance(data, dict) else {}
-                print(f"  Instagram clips skipped: HTTP {r.status_code} {err.get('code', '')} {err.get('message', '')[:120]}")
-            else:
-                for m in ((data.get("business_discovery") or {}).get("media") or {}).get("data", []):
-                    at = _parse_time(m.get("timestamp", ""))
-                    url = m.get("permalink", "")
-                    if at and url.startswith("https://www.instagram.com/"):
-                        out.append({"text": _letters(m.get("caption", "")), "url": url, "at": at,
-                                    "video": m.get("media_type") == "VIDEO" or m.get("media_product_type") == "REELS",
-                                    "source": "instagram"})
+                print(f"  Instagram @{username} clips skipped: HTTP {r.status_code} {err.get('code', '')}")
+                continue
+            for m in ((data.get("business_discovery") or {}).get("media") or {}).get("data", []):
+                at = _parse_time(m.get("timestamp", ""))
+                url = m.get("permalink", "")
+                if at and url.startswith("https://www.instagram.com/"):
+                    w = _words(m.get("caption", ""))
+                    out.append({"text": _flat(w), "words": w, "url": url, "at": at, "label": f"@{username}",
+                                "video": m.get("media_type") == "VIDEO" or m.get("media_product_type") == "REELS",
+                                "source": "instagram"})
         except Exception as e:  # never print the request (it holds the token)
-            print(f"  Instagram clips skipped: {type(e).__name__}")
+            print(f"  Instagram @{username} clips skipped: {type(e).__name__}")
     _clip_cache["ig"] = out
     return out
 
@@ -2633,7 +2694,8 @@ def _yt_recent():
                 at = _parse_time(e.findtext("a:published", default="", namespaces=ns) or "")
                 low = title.lower()
                 if vid and at and not any(w in low for w in _YT_SKIP):
-                    out.append({"text": _letters(title), "url": f"https://www.youtube.com/watch?v={vid}",
+                    out.append({"text": _flat(_words(title)), "words": _words(title),
+                                "url": f"https://www.youtube.com/watch?v={vid}",
                                 "at": at, "video": True, "both_required": True, "source": "youtube"})
     except Exception as e:
         print(f"  YouTube clips skipped: {type(e).__name__}")
@@ -2652,13 +2714,24 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "behindthescenes", "entrance", "hotel", "airport", "landed", "fanfest", "autograph",
                    "photoshoot", "mediascrum", "scrum", "ceremonial", "openworkout", "sparring", "training",
                    "reacting", "celly", "celebrat", "family", "careersofar", "grateful", "nextfor",
-                   "whatsnext", "whatisnext", "facenext", "fightnext")
+                   "whatsnext", "whatisnext", "facenext", "fightnext",
+                   # (titles UFC's channels post that aren't one fight: recaps, previews, odds, compilations)
+                   "breakdown", "bestof", "compilation", "recap", "fullevent", "fullcard", "odds", "betting",
+                   "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa", "pesaje", "caraacara",
+                   "coletiva", "pesagem", "encarada", "prediccion", "palpite", "bastidores", "promo", "livestream",
+                   "watchparty", "topfinish", "topknockout", "topsubmission", "bestknockout", "careerhighlight",
+                   "everyfinish", "everyknockout", "allfinishes",
+                   # Arabic: arrival, interview, press conference, weigh-in, face-off, predictions, training, celebration
+                   "وصول", "يصل", "وصل", "مقابله", "مؤتمر", "الميزان", "الوزن", "وجهالوجه", "توقع", "تحليل",
+                   "كواليس", "تدريب", "قبلالنزال", "بعدالنزال", "ردفعل", "احتفال", "يحتفل")
 # Words that show the post is about the fight's action or result.
 _CLIP_FIGHT = ("knockout", "knocks", "knocked", "tko", "submission", "submits", "submitted", "finish",
                "highlight", "decision", "defeat", "beats", "victory", "andstill", "andnew", "newchamp",
                "retains", "wins", "thewin", "fullfight", "freefight", "nocaut", "finaliza", "mejoresmomentos",
                "melhoresmomentos", "peleacompleta", "lutacompleta", "flatline", "slept", "lightsout", "choke",
-               "armbar", "stoppage", "stops", "putsaway", "dropped", "drops", "elbows", "spinning")
+               "armbar", "stoppage", "stops", "putsaway", "dropped", "drops", "elbows", "spinning",
+               # Arabic: knockout, choke, submission, wins, victory, beats, keeps (the belt)
+               "قاضيه", "خنق", "استسلام", "يفوز", "فوز", "انتصار", "ينتصر", "يهزم", "هزم", "يحتفظ", "يسقط", "اسقط")
 
 
 def _clip_text_ok(letters, platform):
@@ -2670,7 +2743,7 @@ def _clip_text_ok(letters, platform):
     return platform != "instagram" or any(w in letters for w in _CLIP_FIGHT)
 
 
-def _best_clip(fight, start, posts, until):
+def _best_clip(fight, start, posts, until, card_cnt=None):
     """The post that is clearly about this fight, or None.
     Both fighters named = match. On Instagram, a Reel naming only the winner
     also matches (UFC often captions finish clips with just the winner).
@@ -2683,7 +2756,11 @@ def _best_clip(fight, start, posts, until):
             continue
         if not _clip_text_ok(p["text"], p["source"]):
             continue
-        a, b = _mentions(p["text"], fight.get("fighterA", "")), _mentions(p["text"], fight.get("fighterB", ""))
+        words = p.get("words") or p["text"]
+        if set(words.split()) & _COMPILATION:
+            continue
+        a = _mentions_entry(p["text"], words, fight.get("fighterA", ""), fight.get("fighterAAr", ""), card_cnt, True)
+        b = _mentions_entry(p["text"], words, fight.get("fighterB", ""), fight.get("fighterBAr", ""), card_cnt, True)
         winner = fight.get("winner", "")
         if a and b:
             score = 3
@@ -2775,6 +2852,7 @@ def find_clips(ref, doc, hours=CLIP_HOURS):
     if not posts:
         return
     until = start + timedelta(hours=hours)
+    card_cnt = _card_count([(f.get(s), f.get(s + "Ar")) for f in fights for s in ("fighterA", "fighterB")])
     changed = False
     out = []
     for f in fights:
@@ -2783,11 +2861,11 @@ def find_clips(ref, doc, hours=CLIP_HOURS):
             for platform in ("instagram", "youtube"):
                 if platform in {c.get("source") for c in _clip_list(f)}:
                     continue
-                p = _best_clip(f, start, [x for x in posts if x["source"] == platform], until)
+                p = _best_clip(f, start, [x for x in posts if x["source"] == platform], until, card_cnt)
                 if p and platform == "youtube" and not _live_plays(p["url"]):
                     p = None  # blocked in Arab countries: wait for another source
                 if p and _add_clip(f, {"url": p["url"], "source": p["source"], "at": p["at"],
-                                       "channel": f"@{IG_TARGET}" if platform == "instagram" else "UFC"}):
+                                       "channel": p.get("label") or "UFC"}):
                     changed = True
                     print(f"  clip found ({p['source']}): {f.get('fighterA')} vs {f.get('fighterB')}")
         out.append(f)
@@ -2831,8 +2909,9 @@ YT_CHANNELS = [
     ("@espn", ("ESPN",), True),
     ("@canalcombate", ("Combate", "Canal Combate"), True),
     ("@tsn", ("TSN",), True),
+    ("@UFCIndia", ("UFC India",), False),
 ]
-YT_INDEX_V = 2   # raise when _yt_keep changes: UFC's own channels are read again once
+YT_INDEX_V = 3   # raise when _yt_keep changes: UFC's own channels are read again once
 YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
                  "betting", "picks", "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa",
@@ -2942,6 +3021,8 @@ def _yt_keep(title, ufc_only):
     low = title.lower()
     if not title or low in ("private video", "deleted video"):
         return False
+    if not ufc_only:
+        return True  # UFC's own channels: keep every upload, the matcher decides
     if any(w in low for w in _YT_SKIP + _YT_SKIP_MORE):
         return False
     if ufc_only and "ufc" not in low:
@@ -3019,7 +3100,7 @@ def yt_update_index(db, full=False):
                     t = sn.get("title", "")
                     at = _parse_time(cd.get("videoPublishedAt") or sn.get("publishedAt") or "")
                     if at and _yt_keep(t, ufc_only):
-                        new_rows.append(f"{vid}|{int(at.timestamp())}|{_letters(t)[:160]}")
+                        new_rows.append(f"{vid}|{int(at.timestamp())}|{_words(t)[:200]}")
                 token = data.get("nextPageToken")
                 if not token:
                     complete = True
@@ -3042,9 +3123,9 @@ def yt_update_index(db, full=False):
             yt_save_index(db, cid, meta, rows)
         print(f"  YouTube index {title}: {len(rows)} fight videos ({len(new_rows)} new, {pages} page(s) read)")
         for r in rows:
-            vid, ts, letters = r.split("|", 2)
+            vid, ts, words = r.split("|", 2)
             index.append({"url": f"https://www.youtube.com/watch?v={vid}", "platform": "youtube",
-                          "at": datetime.fromtimestamp(int(ts), timezone.utc), "letters": letters,
+                          "at": datetime.fromtimestamp(int(ts), timezone.utc), "letters": _flat(words), "words": words,
                           "label": title, "video": True, "ufc": not ufc_only})
     return index
 
@@ -3057,7 +3138,7 @@ def _pair_key(a, b):
     return "|".join(sorted([norm(a), norm(b)]))
 
 
-def clip_candidates(a, b, when, until, index, winner="", platform="youtube"):
+def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_ar="", b_ar="", card=None):
     """Official videos of fighter a vs fighter b on one platform, best first,
     posted between 'when' (fight day) and 'until' (the next time they met).
     Both names = match. A post naming only the winner also counts when it came
@@ -3066,7 +3147,8 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube"):
     out = []
     lo = when - CLIP_EARLIEST
     soon = when + timedelta(days=4)
-    ka, kb = _name_keys(a), _name_keys(b)
+    cnt = _card_count(card) if card else None
+    week = when + timedelta(days=5)
     wa, wb = bool(winner) and norm(winner) == norm(a), bool(winner) and norm(winner) == norm(b)
     for e in index:
         if e["platform"] != platform or not (lo <= e["at"] < until):
@@ -3074,16 +3156,23 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube"):
         if platform == "instagram" and not e["video"]:
             continue
         letters = e["letters"]
-        ma, mb = any(k in letters for k in ka), any(k in letters for k in kb)
+        words = e.get("words") or letters
+        near = cnt is not None and e["at"] <= week and (platform == "instagram" or e.get("ufc"))
+        if set(words.split()) & _COMPILATION:
+            continue  # "Every Petr Yan Finish", "Career highlights", "Top 10 knockouts": not this fight
+        ma = _mentions_entry(letters, words, a, a_ar, cnt, near)
+        mb = _mentions_entry(letters, words, b, b_ar, cnt, near)
         if not (ma or mb) or not _clip_text_ok(letters, platform):
             continue
         score = _yt_score(letters)
         winner_only = (ma and wa) or (mb and wb)
         if ma and mb:
             tier = 0
-        elif e["at"] <= soon and (platform == "instagram" or score >= 2) and winner_only:
+        elif (e["at"] <= soon and (platform == "instagram" or score >= 2) and winner_only
+              and not any(w in letters for w in ("freefight", "fullfight", "peleacompleta", "lutacompleta"))):
             tier = 1
         elif (platform == "youtube" and e.get("ufc") and winner_only and e["at"] <= when + timedelta(hours=18)
+              and not any(w in letters for w in ("freefight", "fullfight"))
               and any(w in letters for w in _YT_RESULT)):
             tier = 1
         else:
@@ -3111,7 +3200,11 @@ def yt_match(a, b, when, until, index, winner=""):
 # goes back in time, so past fights get Reels too. An account is used only if
 # it exists with a big following; the log lists them so the owner can confirm
 # each has Instagram's blue tick.
-IG_ACCOUNTS = ("ufceurope", "ufcespanol", "ufcindia", "ufcfightpass", "espnmma")
+IG_ACCOUNTS = ("ufceurope", "ufcespanol", "ufcindia", "ufcfightpass", "espnmma", "ufcmena")
+# Official accounts below IG_MIN_FOLLOWERS, checked by hand (blue tick + "official account"
+# in the bio, Reels play in Morocco): @ufcmena = UFC Middle East & North Africa.
+IG_SMALL_OK = {"ufcmena"}
+IG_INDEX_V = 2  # raise when the stored caption format changes: each account is read again
 # Accounts whose Reels often don't play in our viewers' countries ("not available
 # in your country", tested from Morocco): @ufc_brasil (all), @ufc (2 of 5).
 # Their clips are removed.
@@ -3150,6 +3243,13 @@ def ig_update_index(db):
     calls = 0
     for username in IG_ACCOUNTS:
         meta, rows = yt_load_index(db, username, "igIndex")
+        reset = bool(meta) and int(meta.get("v") or 1) < IG_INDEX_V
+        if reset:  # captions are stored as words now (Arabic too): read the account again
+            rows = []
+            meta.update({"complete": False, "v": IG_INDEX_V})
+            meta.pop("resume", None)
+        elif not meta:
+            meta = {"v": IG_INDEX_V}
         if not limited:
             complete = bool(meta.get("complete"))
             after = None if complete else meta.get("resume")
@@ -3167,7 +3267,7 @@ def ig_update_index(db):
                     calls += 1
                     if pages == 1 and not meta.get("verified"):
                         followers, name = int(bd.get("followers_count") or 0), bd.get("name", "")
-                        if followers < IG_MIN_FOLLOWERS:
+                        if followers < IG_MIN_FOLLOWERS and username not in IG_SMALL_OK:
                             print(f"  Instagram @{username}: NOT verified ({name!r}, {followers} followers), skipped")
                             break
                         meta.update({"verified": True, "name": name, "followers": followers})
@@ -3186,9 +3286,9 @@ def ig_update_index(db):
                             continue
                         known.add(url)
                         video = m.get("media_type") == "VIDEO" or m.get("media_product_type") == "REELS"
-                        letters = _letters(m.get("caption", ""))[:400]
-                        if video and letters:
-                            new_rows.append(f"{url}|{ts}|1|{letters}")
+                        words = _words(m.get("caption", ""))[:500]
+                        if video and words:
+                            new_rows.append(f"{url}|{ts}|1|{words}")
                     after = ((media.get("paging") or {}).get("cursors") or {}).get("after")
                     if not after or not (media.get("paging") or {}).get("next"):
                         complete = True
@@ -3200,7 +3300,7 @@ def ig_update_index(db):
                 limited = True
             except Exception as e:
                 print(f"  Instagram @{username} stopped: {type(e).__name__} {e}")
-            if meta.get("verified") and (new_rows or complete != bool(meta.get("complete"))
+            if meta.get("verified") and (reset or new_rows or complete != bool(meta.get("complete"))
                                          or after != meta.get("resume")):
                 rows = new_rows + rows
                 meta.update({"complete": complete, "newest": top if complete else newest})
@@ -3214,9 +3314,9 @@ def ig_update_index(db):
                       + ("" if complete else ", more to read next run") + ")")
         if meta.get("verified"):
             for r in rows:
-                url, ts, video, letters = r.split("|", 3)
+                url, ts, video, words = r.split("|", 3)
                 index.append({"url": url, "platform": "instagram", "at": datetime.fromtimestamp(int(ts), timezone.utc),
-                              "letters": letters, "label": f"@{username}", "video": video == "1"})
+                              "letters": _flat(words), "words": words, "label": f"@{username}", "video": video == "1"})
     return index
 
 
@@ -3313,11 +3413,13 @@ def yt_clips_for_events(db, index, region=None, days=None):
         start = doc.get("start")
         if not start or start > now or (days and start < now - timedelta(days=days)):
             continue
+        card = [(f.get(s), f.get(s + "Ar")) for f in doc.get("fights") or [] for s in ("fighterA", "fighterB")]
         for k, f in enumerate(doc.get("fights") or []):
             if f.get("winner"):
                 a, b = f.get("fighterA", ""), f.get("fighterB", "")
                 until = _until(met, a, b, start)
-                cands = {p: clip_candidates(a, b, start, until, index, f.get("winner", ""), p)
+                cands = {p: clip_candidates(a, b, start, until, index, f.get("winner", ""), p,
+                                            f.get("fighterAAr", ""), f.get("fighterBAr", ""), card)
                          for p in ("youtube", "instagram")}
                 vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
                 plan.append((snap.id, k, cands))
@@ -3327,6 +3429,8 @@ def yt_clips_for_events(db, index, region=None, days=None):
         by_event.setdefault(eid, []).append((k, cands))
     found = have = total = multi = 0
     report = []
+    text_of = {e["url"]: e.get("words") or e["letters"] for e in index}
+    added = []  # (event, fight, clip) for the report
     for snap, doc in events:
         fights = [dict(f) for f in doc.get("fights") or []]
         changed = False
@@ -3334,9 +3438,13 @@ def yt_clips_for_events(db, index, region=None, days=None):
             f = fights[k]
             new = _pick(cands["youtube"], "youtube", region) + _pick(cands["instagram"], "instagram", region)
             before = len(_clip_list(f))
+            old_urls = {c.get("url") for c in _clip_list(f)}
             if _merge_clips(f, new):
                 changed = True
                 found += max(0, len(_clip_list(f)) - before)
+                for c in _clip_list(f):
+                    if c.get("url") not in old_urls:
+                        added.append((doc.get("name", snap.id), f"{f.get('fighterA')} vs {f.get('fighterB')}", c))
         if changed:
             snap.reference.set({"fights": fights}, merge=True)
         if snap.id in by_event:
@@ -3345,14 +3453,22 @@ def yt_clips_for_events(db, index, region=None, days=None):
             ev_before = sum(1 for f in doc.get("fights") or [] if f.get("winner") and f.get("clip"))
             multi += sum(1 for f in done if len(_clip_list(f)) > 1)
             have, total = have + ev_have, total + len(done)
-            report.append((doc["start"], doc.get("name", snap.id), ev_have, len(done), ev_before))
+            ev_yt = sum(1 for f in done if any(c.get("source") == "youtube" for c in _clip_list(f)))
+            ev_ig_only = sum(1 for f in done if _clip_list(f) and all(c.get("source") == "instagram" for c in _clip_list(f)))
+            report.append((doc["start"], doc.get("name", snap.id), ev_have, len(done), ev_before, ev_yt, ev_ig_only))
     report.sort(reverse=True)
-    for start, name, h, t, b in report[:12]:
+    for start, name, h, t, b, *_ in report[:12]:
         print(f"  {name}: {h}/{t} fights have a clip (before this run: {b})")
     last = report[:25]
     if last:
         print(f"Last {len(last)} events: {sum(r[4] for r in last)}/{sum(r[3] for r in last)} fights had a clip before, "
-              f"{sum(r[2] for r in last)}/{sum(r[3] for r in last)} now")
+              f"{sum(r[2] for r in last)}/{sum(r[3] for r in last)} now "
+              f"({sum(r[5] for r in last)} with YouTube, {sum(r[6] for r in last)} with Instagram only)")
+    if added:
+        import random
+        print(f"Random new matches ({min(10, len(added))} of {len(added)}):")
+        for ev, fight, c in random.sample(added, min(10, len(added))):
+            print(f"  [{ev}] {fight} -> {c.get('source')} {c.get('channel')}: {text_of.get(c.get('url'), '?')[:110]!r} {c.get('url')}")
     print(f"Official clips: {found} new. Finished fights checked: {have}/{total} have a clip"
           + (f" ({100 * have // total}%)" if total else "") + f", {multi} with a choice of sources")
 
@@ -3379,7 +3495,7 @@ def yt_clips_for_fighters(db, index, region=None):
                 continue
             me, opp = d.get("name", ""), r.get("opponent", "")
             won = me if r.get("outcome") == "W" else opp if r.get("outcome") == "L" else ""
-            cands = {p: clip_candidates(me, opp, when, _until(met, me, opp, when), index, won, p)
+            cands = {p: clip_candidates(me, opp, when, _until(met, me, opp, when), index, won, p, d.get("nameAr", ""))
                      for p in ("youtube", "instagram")}
             vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
             plan[(snap.id, k)] = cands
