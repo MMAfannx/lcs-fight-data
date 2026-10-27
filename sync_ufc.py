@@ -3982,7 +3982,14 @@ def photo_search_report(names):
             print(f"PHOTO {name}: request failed {type(e).__name__}")
             continue
         pages = (data.get("query") or {}).get("pages", [])
-        print(f"PHOTO {name}: {len(pages)} file(s) {str(data.get('error') or '')[:200]}")
+        print(f"PHOTO {name}: {len(pages)} file(s) {str(data.get('error') or '')[:200]} keys={list(data)[:5]}")
+        try:
+            plain = requests.get("https://commons.wikimedia.org/w/api.php", params={
+                "action": "query", "list": "search", "srsearch": name, "srnamespace": "6", "srlimit": "8",
+                "format": "json", "formatversion": "2"}, headers=HEADERS, timeout=30).json()
+            print(f"   plain search: {[r.get('title') for r in (plain.get('query') or {}).get('search', [])]}")
+        except Exception as e:
+            print(f"   plain search failed {type(e).__name__}")
         for page in pages[:10]:
             ii = (page.get("imageinfo") or [{}])[0]
             meta = ii.get("extmetadata") or {}
@@ -4187,7 +4194,7 @@ def main():
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
             if os.environ.get("CLIPS_PHOTOS"):
-                photo_search_report(["Rafael dos Anjos", "Jack Della Maddalena", "Joaquin Buckley", "Brandon Royval",
+                photo_search_report(["Conor McGregor", "Jon Jones", "Rafael dos Anjos", "Jack Della Maddalena", "Joaquin Buckley", "Brandon Royval",
                                      "Amir Albazi", "Bryce Mitchell", "Erin Blanchfield", "Lerone Murphy"])
             elif os.environ.get("CLIPS_AUDIT"):
                 run_clips_audit(db)
