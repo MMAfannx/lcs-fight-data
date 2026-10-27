@@ -2794,6 +2794,10 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "hablo", "mensaje", "reaccion", "reacciona",
                    # after the fight but not the fight: thanks, dedications, hype (EN)
                    "givesthanks", "thanksto", "thankyou", "showinglove", "showslove", "dedicat", "hypedfor",
+                   # the moment before the first bell, talk shows, hugs and reactions (EN/PT/ES)
+                   "touchgloves", "touchedgloves", "touchinggloves", "finallymeet", "meetinside", "preshow",
+                   "posshow", "postshow", "sportsmanship", "emote", "vibra", "reage", "comemora", "celebra",
+                   "festeja", "treinei",
                    # Arabic (@ufcmena), normalized like _words: arrivals, press, interviews, talk,
                    # greetings, thanks, messages, preparation, warm-up, backstage, weigh-in, face to face
                    "وصلوا", "وصول", "مؤتمر", "مقابله", "يتحدث", "تحيه", "يشكر", "رساله", "استعداد",
@@ -3277,7 +3281,8 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_a
         elif (platform == "youtube" and e.get("ufc") and winner_only and ended
               and ended - timedelta(minutes=6) <= e["at"] <= ended + timedelta(minutes=25)):
             tier = 1  # UFC posts the finish as a Short right after the fight: "KODY STEELE IS HIM"
-        elif (e["at"] <= soon and (platform == "instagram" or score >= 2) and winner_only
+        elif (e["at"] <= (soon if platform == "instagram" else (ended or when) + timedelta(hours=6))
+              and (platform == "instagram" or score >= 2) and winner_only
               and not any(w in letters for w in ("freefight", "fullfight", "peleacompleta", "lutacompleta"))):
             tier = 1
         elif (platform == "youtube" and e.get("ufc") and winner_only and e["at"] <= when + timedelta(hours=18)
@@ -3309,10 +3314,30 @@ def fight_ends(doc, index):
             out[k] = f["endedAt"]
             continue
         hits = [e["at"] for e in talks for side in ("fighterA", "fighterB")
-                if f.get(side) and _mentions_entry(e["letters"], e.get("words") or e["letters"], f[side], "", None, False)]
+                if f.get(side) and _full_name_in(e["letters"], f[side], doc)]
         if hits:
             out[k] = min(hits) - timedelta(minutes=4)
+    # Fights are listed main event first, so each one ends after every bout
+    # below it: drop a time that breaks that order (a name mix-up).
+    latest = None
+    for k in range(len(doc.get("fights") or []) - 1, -1, -1):
+        if k in out:
+            if latest and out[k] < latest:
+                del out[k]
+            else:
+                latest = out[k]
     return out
+
+
+def _full_name_in(letters, name, doc):
+    """The fighter's full name, or a 5+ letter last name no one else on the card has."""
+    words = [w for w in re.split(r"\s+", strip_title(name or "")) if w]
+    if len(words) >= 2 and _letters("".join(words)) in letters:
+        return True
+    last = _letters(words[-1]) if words else ""
+    others = [n for f in doc.get("fights") or [] for n in (f.get("fighterA"), f.get("fighterB")) if n and n != name]
+    return (len(last) >= 5 and last in letters
+            and not any(last in _letters(o) for o in others))
 
 
 def clip_floor(doc, k, ends):
@@ -3496,8 +3521,11 @@ class YTRegion:
         self.ok = dict((snap.to_dict() or {}).get("ok") or {}) if snap.exists else {}
         self.dirty = False
 
-    def check(self, vids):
-        todo = [v for v in dict.fromkeys(vids) if v not in self.ok]
+    def check(self, vids, fresh=()):
+        """fresh: recent videos to ask again even if cached (broadcasters often
+        block a video in some countries hours after UFC uploads it)."""
+        fresh = set(fresh)
+        todo = [v for v in dict.fromkeys(list(vids) + list(fresh)) if v not in self.ok or v in fresh]
         if not YT_KEY:
             return
         try:
@@ -3554,7 +3582,7 @@ def yt_clips_for_events(db, index, region=None, days=None):
     events = [(snap, snap.to_dict() or {}) for snap in db.collection("events").stream()]
     met = _meetings([d for _, d in events])
     # First the candidates, then one YouTube call per 50 videos for the region check.
-    plan, vids = [], []
+    plan, vids, fresh = [], [], []
     for snap, doc in events:
         start = doc.get("start")
         if not start or start > now or (days and start < now - timedelta(days=days)):
@@ -3570,8 +3598,12 @@ def yt_clips_for_events(db, index, region=None, days=None):
                                             clip_floor(doc, k, ends), ends.get(k))
                          for p in ("youtube", "instagram")}
                 vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
+                fresh += [_vid(e["url"]) for e in cands["youtube"][:6] if e["at"] > now - timedelta(days=10)]
+                fresh += [_vid(c["url"]) for c in _clip_list(f)
+                          if c.get("source") == "youtube" and isinstance(c.get("at"), datetime)
+                          and c["at"] > now - timedelta(days=10)]
                 plan.append((snap.id, k, cands))
-    region.check(vids)
+    region.check(vids, fresh)
     by_event = {}
     for eid, k, cands in plan:
         by_event.setdefault(eid, []).append((k, cands))
@@ -3586,6 +3618,15 @@ def yt_clips_for_events(db, index, region=None, days=None):
         for k, cands in by_event.get(snap.id, []):
             f = fights[k]
             gone = _drop_stale(f, {e["url"] for p in cands for e in cands[p]}, text_of)
+            # Saved YouTube clips that stopped playing in Arab countries.
+            playing = [c for c in _clip_list(f) if c.get("source") != "youtube" or region.plays(c.get("url", ""))]
+            if len(playing) != len(_clip_list(f)):
+                gone += len(_clip_list(f)) - len(playing)
+                f.pop("clip", None)
+                f.pop("clips", None)
+                if playing:
+                    playing.sort(key=_clip_rank)
+                    f["clip"], f["clips"] = playing[0], playing
             if gone:
                 stale += gone
                 changed = True
