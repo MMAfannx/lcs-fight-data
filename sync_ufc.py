@@ -745,6 +745,50 @@ _OV_NOT_SOLO = re.compile(r"\bvs?\.?\b|\band\b|&|\bwith\b|\bfans?\b|poster|logo|
                           r"belt\b.*\bbelt|\bfight\b.*\bfight", re.I)
 
 
+# Wikimedia Commons search: a free photo whose FILE NAME has the fighter's full
+# name, shows one person (no "vs", "and"...) and is about MMA (its description
+# or categories say UFC / MMA / fighter...), for fighters Wikipedia and
+# Wikidata have no photo for. Commons is moderated and checks licenses.
+COMMONS_PER_RUN = 160
+_COMMONS_MMA = re.compile(r"mixed martial|\bmma\b|\bufc\b|ultimate fighting|bellator|\bpfl\b|one championship|"
+                          r"octagon|\bcage\b|\bfighters?\b|kickbox|jiu.?jitsu|wrestl|sambo|combat sport|muay thai", re.I)
+
+
+def commons_photo(name):
+    """A free Commons photo of this fighter (see above), or None."""
+    words = [w for w in re.split(r"\s+", strip_title(name)) if w]
+    if len(words) < 2:
+        return None
+    full = " ".join(words)
+    params = {"action": "query", "generator": "search", "gsrsearch": f'intitle:"{full}"', "gsrnamespace": "6",
+              "gsrlimit": "15", "prop": "imageinfo|categories", "iiprop": "url|extmetadata|size",
+              "iiurlwidth": "400", "cllimit": "max", "clshow": "!hidden", "format": "json", "formatversion": "2"}
+    data = requests.get("https://commons.wikimedia.org/w/api.php", params=params,
+                        headers=HEADERS, timeout=30).json().get("query", {})
+    want = _letters(full)
+    for page in sorted(data.get("pages", []), key=lambda p: p.get("index", 99)):
+        title = page.get("title", "")
+        if want not in _letters(title) or not title.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+        if _OV_NOT_SOLO.search(title) or page.get("imagerepository") not in (None, "local"):
+            continue
+        ii = (page.get("imageinfo") or [{}])[0]
+        meta = ii.get("extmetadata") or {}
+        value = lambda k: (meta.get(k) or {}).get("value", "")
+        about = " ".join([title, _plain(value("ImageDescription")), _plain(value("Categories"))]
+                         + [c.get("title", "") for c in page.get("categories") or []])
+        if not _COMMONS_MMA.search(about):
+            continue  # same name, but nothing says it's the fighter
+        license_name = _plain(value("LicenseShortName"))
+        if value("NonFree") or not license_name or "fair use" in license_name.lower():
+            continue
+        if (ii.get("width") or 0) < 300 or not ii.get("thumburl"):
+            continue
+        return {"url": ii["thumburl"], "credit": _plain(value("Artist")) or "Wikimedia Commons",
+                "license": license_name, "page": ii.get("descriptionurl", ""), "source": "commons"}
+    return None
+
+
 def openverse_photo(name):
     """A free photo whose title names this fighter (first and last name), or None."""
     words = [w for w in re.split(r"\s+", strip_title(name)) if w]
@@ -1384,6 +1428,7 @@ def sync_fighters(db, with_records=False):
     photo_map = {fid: d["photo"] for fid, d in existing.items()
                  if d.get("photo") and d["photo"].get("source") != "openverse"}
     ov_left = OPENVERSE_PER_RUN
+    commons_left = COMMONS_PER_RUN
     month_ago = datetime.now(timezone.utc) - timedelta(days=30)
     for f in roster:
         fid = fighter_key(f["name"])
@@ -1427,6 +1472,21 @@ def sync_fighters(db, with_records=False):
             doc["photoSearched"] = datetime.now(timezone.utc)
         elif searched:
             doc["photoSearched"] = searched
+        # Still none: search Wikimedia Commons by name (once a month per fighter).
+        searched_c = old.get("commonsSearched")
+        if not doc["photo"] and commons_left > 0 and not (isinstance(searched_c, datetime) and searched_c > month_ago):
+            commons_left -= 1
+            try:
+                doc["photo"] = commons_photo(f["name"])
+                if doc["photo"]:
+                    print(f"  Commons photo: {f['name']} -> {doc['photo']['page']} ({doc['photo']['license']})")
+            except Exception as e:
+                print(f"  Commons search skipped: {type(e).__name__}")
+                commons_left = 0
+            doc["commonsSearched"] = datetime.now(timezone.utc)
+            time.sleep(0.5)
+        elif searched_c:
+            doc["commonsSearched"] = searched_c
         if doc["photo"]:
             photo_map[fid] = doc["photo"]
         doc["searchTerms"] = search_terms(f["name"] + " " + doc["nameAr"], [])
