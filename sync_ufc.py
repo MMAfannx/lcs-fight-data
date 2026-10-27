@@ -2721,6 +2721,13 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "coletiva", "pesagem", "encarada", "prediccion", "palpite", "bastidores", "promo", "livestream",
                    "watchparty", "topfinish", "topknockout", "topsubmission", "bestknockout", "careerhighlight",
                    "everyfinish", "everyknockout", "allfinishes",
+                   # on the way / previews / talk (EN, PT, ES)
+                   "ontheirway", "onhisway", "onherway", "tothearena", "headingto", "headedto", "keepaneye",
+                   "keepyoureye", "eyeson", "lookingahead", "fightpreview", "gameplan", "analysis", "analyzes",
+                   "explains", "talks", "speaks", "reveals", "discusses", "sitdown", "sitsdown", "roadto",
+                   "storyof", "documentary", "deolho", "analise", "analisa", "chegada", "chegou", "chegam",
+                   "fala", "falou", "comenta", "comentou", "recado", "llegada", "llegan", "analisis", "habla",
+                   "hablo", "mensaje", "reaccion", "reacciona",
                    # Arabic: arrival, interview, press conference, weigh-in, face-off, predictions, training, celebration
                    "وصول", "يصل", "وصل", "مقابله", "مؤتمر", "الميزان", "الوزن", "وجهالوجه", "توقع", "تحليل",
                    "كواليس", "تدريب", "قبلالنزال", "بعدالنزال", "ردفعل", "احتفال", "يحتفل")
@@ -3464,8 +3471,17 @@ def yt_clips_for_events(db, index, region=None, days=None):
         print(f"Last {len(last)} events: {sum(r[4] for r in last)}/{sum(r[3] for r in last)} fights had a clip before, "
               f"{sum(r[2] for r in last)}/{sum(r[3] for r in last)} now "
               f"({sum(r[5] for r in last)} with YouTube, {sum(r[6] for r in last)} with Instagram only)")
+    import random
+    pool = []
+    for snap, doc in events:
+        if any(r[1] == doc.get("name", snap.id) for r in last):
+            for f in doc.get("fights") or []:
+                pool += [(doc.get("name", snap.id), f"{f.get('fighterA')} vs {f.get('fighterB')}", c) for c in _clip_list(f)]
+    if pool:
+        print(f"Random saved clips, last {len(last)} events ({min(15, len(pool))} of {len(pool)}):")
+        for ev, fight, c in random.sample(pool, min(15, len(pool))):
+            print(f"  [{ev}] {fight} -> {c.get('source')} {c.get('channel')}: {text_of.get(c.get('url'), '?')[:110]!r} {c.get('url')}")
     if added:
-        import random
         print(f"Random new matches ({min(10, len(added))} of {len(added)}):")
         for ev, fight, c in random.sample(added, min(10, len(added))):
             print(f"  [{ev}] {fight} -> {c.get('source')} {c.get('channel')}: {text_of.get(c.get('url'), '?')[:110]!r} {c.get('url')}")
