@@ -2895,8 +2895,8 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    # greetings, thanks, messages, preparation, warm-up, backstage, weigh-in, face to face
                    "وصلوا", "وصول", "مؤتمر", "مقابله", "يتحدث", "تحيه", "يشكر", "رساله", "استعداد",
                    "الاحماء", "كواليس", "الميزان", "وجهالوجه",
-                   # pre-shows, and "Free Fight" uploads (usually an older fight between them)
-                   "preshow", "pregame", "freefight", "peleagratis", "lutagratis", "combategratis",
+                   # pre-shows ("Free Fight" uploads: see _FULL_FIGHT, only when they met once)
+                   "preshow", "pregame",
                    # Arabic: arrival, interview, press conference, weigh-in, face-off, predictions, training, celebration
                    "وصول", "يصل", "وصل", "مقابله", "مؤتمر", "الميزان", "الوزن", "وجهالوجه", "توقع", "تحليل",
                    "كواليس", "تدريب", "قبلالنزال", "بعدالنزال", "ردفعل", "احتفال", "يحتفل")
@@ -2937,8 +2937,8 @@ def _best_clip(fight, start, posts, until, card_cnt=None):
         if not _clip_text_ok(p["text"], p["source"]):
             continue
         words = p.get("words") or p["text"]
-        if set(words.split()) & _COMPILATION:
-            continue
+        if set(words.split()) & _COMPILATION or any(w in p["text"] for w in _FULL_FIGHT):
+            continue  # (a full-fight upload on fight night is an older fight)
         a = _mentions_entry(p["text"], words, fight.get("fighterA", ""), fight.get("fighterAAr", ""), card_cnt, True)
         b = _mentions_entry(p["text"], words, fight.get("fighterB", ""), fight.get("fighterBAr", ""), card_cnt, True)
         winner = fight.get("winner", "")
@@ -3344,8 +3344,16 @@ def _pair_key(a, b):
     return "|".join(sorted([norm(a), norm(b)]))
 
 
+# Whole fights UFC uploads for free. Used only for a pair that fought ONCE
+# (with a rematch we can't tell which fight it is), and never with "2", "3",
+# "trilogy" or "rematch" in the title.
+_FULL_FIGHT = ("freefight", "fullfight", "peleagratis", "lutagratis", "combategratis", "peleacompleta",
+               "lutacompleta", "polnyyboy", "besplatnyyboy")
+_REMATCH = re.compile(r"\b(2|3|ii|iii|trilogy|rematch|trilogia|revanche|revancha)\b")
+
+
 def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_ar="", b_ar="", card=None,
-                    floor=None, ended=None, strict=False, began=None, upper=None):
+                    floor=None, ended=None, strict=False, began=None, upper=None, rematch=False):
     """Official videos of fighter a vs fighter b on one platform, best first,
     posted between 'when' (fight day) and 'until' (the next time they met).
     Both names = match. A post naming only the winner also counts when it came
@@ -3367,6 +3375,8 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_a
             continue
         letters = e["letters"]
         words = e.get("words") or letters
+        if any(w in letters for w in _FULL_FIGHT) and (rematch or _REMATCH.search(words)):
+            continue
         near = cnt is not None and e["at"] <= week and (platform == "instagram" or e.get("ufc"))
         if set(words.split()) & _COMPILATION:
             continue  # "Every Petr Yan Finish", "Career highlights", "Top 10 knockouts": not this fight
@@ -3710,7 +3720,8 @@ def yt_clips_for_events(db, index, region=None, days=None):
                 cands = {p: clip_candidates(a, b, start, until, index, f.get("winner", ""), p,
                                             f.get("fighterAAr", ""), f.get("fighterBAr", ""), card,
                                             clip_floor(doc, k, ends), ends.get(k),
-                                            began=ends.get(k + 1), upper=ends.get(k - 1))
+                                            began=ends.get(k + 1), upper=ends.get(k - 1),
+                                            rematch=len(met.get(_pair_key(a, b), [])) > 1)
                          for p in ("youtube", "instagram")}
                 vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
                 fresh += [_vid(e["url"]) for e in cands["youtube"][:6] if e["at"] > now - timedelta(days=10)]
@@ -3825,8 +3836,10 @@ def yt_clips_for_fighters(db, index, region=None):
             won = me if r.get("outcome") == "W" else opp if r.get("outcome") == "L" else ""
             # Older fights (not on our events): we only know the day, so both
             # names, a fight/result word, and nothing from before that evening.
+            again = (len(met.get(_pair_key(me, opp), [])) > 1
+                     or sum(1 for x in d.get("recent") or [] if norm(x.get("opponent", "")) == norm(opp)) > 1)
             cands = {p: clip_candidates(me, opp, when, _until(met, me, opp, when), index, won, p, d.get("nameAr", ""),
-                                        floor=when + timedelta(hours=12), strict=True)
+                                        floor=when + timedelta(hours=12), strict=True, rematch=again)
                      for p in ("youtube", "instagram")}
             vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
             plan[(snap.id, k)] = cands
