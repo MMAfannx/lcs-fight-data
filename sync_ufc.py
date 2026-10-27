@@ -3116,7 +3116,7 @@ YT_CHANNELS = [
     ("@tsn", ("TSN",), True),
     ("@UFCIndia", ("UFC India",), False),
 ]
-YT_INDEX_V = 4   # raise when _yt_keep changes: UFC's own channels are read again once
+YT_INDEX_V = 5   # raise when _yt_keep changes: UFC's own channels are read again once
 YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
                  "betting", "picks", "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa",
@@ -3271,7 +3271,10 @@ def yt_update_index(db, full=False):
         channels = []
     for cid, title, ufc_only, uploads in channels:
         meta, rows = yt_load_index(db, cid)
-        known = {r.split("|", 2)[0] for r in rows}
+        # Rows saved with an empty title (Russian titles before _words read Cyrillic)
+        # are read again so they can match.
+        blank = {r.split("|", 2)[0] for r in rows if not r.split("|", 2)[2].strip()}
+        known = {r.split("|", 2)[0] for r in rows} - blank
         # UFC's own channels: read every upload once more when the title rules
         # change (YT_INDEX_V), so older videos that now pass get in. Resumable.
         reindex = not ufc_only and int(meta.get("v") or 1) < YT_INDEX_V
@@ -3320,7 +3323,8 @@ def yt_update_index(db, full=False):
         except Exception as e:
             print(f"  YouTube index {title} stopped: {type(e).__name__}")
         if reindex or new_rows or complete != bool(meta.get("complete")) or token != meta.get("resume"):
-            rows = new_rows + rows
+            fresh = {r.split("|", 2)[0] for r in new_rows}
+            rows = new_rows + [r for r in rows if r.split("|", 2)[0] not in fresh]
             meta.update({"title": title, "complete": complete, "newest": top if complete else newest})
             if complete:
                 meta.pop("resume", None)
@@ -3499,7 +3503,7 @@ IG_ACCOUNTS = ("ufceurope", "ufcespanol", "ufcindia", "ufcfightpass", "espnmma",
 # Official accounts below IG_MIN_FOLLOWERS, checked by hand (blue tick + "official account"
 # in the bio, Reels play in Morocco): @ufcmena = UFC Middle East & North Africa.
 IG_SMALL_OK = {"ufcmena"}
-IG_INDEX_V = 2  # raise when the stored caption format changes: each account is read again
+IG_INDEX_V = 3  # raise when the stored caption format changes: each account is read again
 # Accounts whose Reels often don't play in our viewers' countries ("not available
 # in your country", tested from Morocco): @ufc_brasil (all), @ufc (2 of 5).
 # Their clips are removed.
@@ -3584,8 +3588,11 @@ def ig_update_index(db):
                         words = _words(m.get("caption", ""))[:500]
                         if video and words:
                             new_rows.append(f"{url}|{ts}|1|{words}")
-                    after = ((media.get("paging") or {}).get("cursors") or {}).get("after")
-                    if not after or not (media.get("paging") or {}).get("next"):
+                    # (Business Discovery's nested paging gives a cursor but often no
+                    # 'next' link: follow the cursor until posts run out, or 3 years back.)
+                    prev_after, after = after, ((media.get("paging") or {}).get("cursors") or {}).get("after")
+                    if (not after or after == prev_after or not media.get("data")
+                            or (oldest is not None and oldest < time.time() - 3 * 365 * 86400)):
                         complete = True
                         break
                     if meta.get("complete") and oldest is not None and oldest < newest - 2 * 86400:
