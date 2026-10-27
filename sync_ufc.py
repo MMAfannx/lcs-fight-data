@@ -4191,6 +4191,13 @@ def run_clips_audit(db, days=70):
             _, rows = yt_load_index(db, snap.id)
             empty = sum(1 for r in rows if not r.split("|", 2)[2].strip())
             print(f"YT index {meta.get('title')}: {len(rows)} rows, {empty} with no readable title")
+    for snap in db.collection("igIndex").stream():
+        meta = snap.to_dict() or {}
+        if "chunks" in meta:
+            _, rows = yt_load_index(db, snap.id, "igIndex")
+            ts = sorted(int(r.split("|")[1]) for r in rows) or [0]
+            print(f"IG index @{snap.id}: {len(rows)} rows, {datetime.fromtimestamp(ts[0], timezone.utc):%Y-%m-%d} .. "
+                  f"{datetime.fromtimestamp(ts[-1], timezone.utc):%Y-%m-%d}, complete={meta.get('complete')} v={meta.get('v')}")
     rows = rows_with = 0
     for snap in db.collection("fighters").where("active", "==", True).stream():
         for r in (snap.to_dict() or {}).get("recent") or []:
