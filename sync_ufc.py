@@ -1069,7 +1069,10 @@ def check_fight_alerts(ref, doc):
 
         live_now = not f.get("winner") and fid in _bdl_live
         if not f.get("winner") and f"start:{fid}" not in sent and not live_now and now <= start + timedelta(hours=8):
-            if (prev and prev.get("winner")) or (not prev and now >= start - timedelta(minutes=5)):
+            # First fight of the night: the prelims usually begin 3 hours before
+            # the main card time saved as 'start' (if they begin earlier,
+            # BALLDONTLIE's "live" sends the "fight started" note instead).
+            if (prev and prev.get("winner")) or (not prev and now >= start - timedelta(hours=3, minutes=5)):
                 send_fight_alert(fid, f"🔔 دخول المقاتلين الآن: {a_ar} ضد {b_ar}", f"النزال يبدأ خلال دقائق · {name_ar}",
                                  f"🔔 Walkouts now: {a} vs {b}", f"The fight starts in a few minutes · {name_en}", bell=True)
                 sent.add(f"start:{fid}")
@@ -2110,6 +2113,14 @@ def score_event(db, ref, event_id, doc):
     results = {f.get("id"): f.get("winner", "") for f in fights}
     how = {f.get("id"): method_kind(f.get("method", "")) for f in fights}
     main_id = next((f.get("id") for f in fights if f.get("isMain")), None)
+    # When each fight began = when the bout before it ended (saved live). A
+    # pick saved after its fight began doesn't count: older app versions let
+    # fans change picks until the main card, after the prelims were decided.
+    began = {}
+    for k, f in enumerate(fights):
+        before = fights[k + 1] if k + 1 < len(fights) else None
+        if before is not None and isinstance(before.get("endedAt"), datetime):
+            began[f.get("id")] = before["endedAt"]
     try:
         from google.cloud.firestore_v1.base_query import FieldFilter
         query = db.collection("picks").where(filter=FieldFilter("eventId", "==", event_id))
@@ -2125,10 +2136,13 @@ def score_event(db, ref, event_id, doc):
         points = correct = total = method_hits = round_hits = 0
         methods = pick.get("methods") or {}
         rounds = pick.get("rounds") or {}
+        saved = pick.get("updated")
         for fight_id, choice in (pick.get("picks") or {}).items():
             winner = results.get(fight_id)
             if not winner or winner in ("Draw", "No contest"):
                 continue  # no result, or no winner to guess
+            if isinstance(saved, datetime) and fight_id in began and saved > began[fight_id]:
+                continue  # picked after this fight had started
             total += 1
             if choice == winner:
                 correct += 1
@@ -2514,8 +2528,9 @@ def bdl_fill_results(start, fights):
                     _bdl_round[f.get("id")] = rnd
                 if "live" not in _bdl_logged:  # so we can see what BALLDONTLIE sends during a fight
                     _bdl_logged.add("live")
-                    print("  BALLDONTLIE live fight fields:",
-                          {k: v for k, v in bout.items() if not isinstance(v, (dict, list))})
+                    fields = {k: v for k, v in bout.items() if not isinstance(v, (dict, list))}
+                    print("  BALLDONTLIE live fight fields:", fields)
+                    print(f"::notice title=BALLDONTLIE live fight fields::{str(fields)[:900]}")
             if bout and (bout.get("status_state") == "final" or bout.get("winner")):
                 w = (bout.get("winner") or {}).get("name", "")
                 method = _bdl_method(bout)
@@ -4335,8 +4350,8 @@ def main():
         start_at = ({**old, **new}).get("start")
         if (MODE in ("full", "fightnight") and start_at and on_card
                 and not all(f.get("winner") for f in on_card)
-                and start_at - timedelta(hours=1) <= datetime.now(timezone.utc) <= start_at + timedelta(hours=9)):
-            live.append((ref, start_at))
+                and start_at - PRELIMS_BEFORE <= datetime.now(timezone.utc) <= start_at + timedelta(hours=9)):
+            live.append((ref, start_at))  # from the prelims ('start' is the main card time)
         try:
             check_pick_reminder(ref, {**old, **new})
         except Exception as e:

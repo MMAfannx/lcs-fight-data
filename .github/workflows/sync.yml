@@ -2,9 +2,9 @@ name: Sync UFC data
 
 on:
   schedule:
-    - cron: "0 */2 * * *"         # full check every 2 hours
-    - cron: "*/10 14-23 * * 6"    # fight nights: every 10 minutes, Saturday 14:00-24:00 UTC (Abu Dhabi/Europe cards start earlier)
-    - cron: "*/10 0-8 * * 0"      # ...and Sunday 00:00-09:00 UTC
+    - cron: "17 */2 * * *"        # full check every 2 hours (not :00, GitHub skips many runs then)
+    - cron: "3-59/10 14-23 * * 6"    # fight nights: every 10 minutes, Saturday 14:00-24:00 UTC (Abu Dhabi/Europe cards start earlier)
+    - cron: "3-59/10 0-8 * * 0"      # ...and Sunday 00:00-09:00 UTC
   workflow_dispatch:              # run by hand from GitHub
     inputs:
       mode:
@@ -37,7 +37,7 @@ jobs:
           BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
           IG_PAGE_TOKEN: ${{ secrets.IG_PAGE_TOKEN }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '0 */2 * * *' && 'full' || 'fightnight') }}
+          SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '17 */2 * * *' && 'full' || 'fightnight') }}
           BACKFILL_FROM_YEAR: ${{ inputs.from_year || '2024' }}
       # clips_debug: the report goes to the "clips-debug" branch (public titles only, no keys)
       - name: clips debug report
