@@ -3929,6 +3929,55 @@ def probe_accounts():
                 print(f"PROBE IG @{u}: {type(e).__name__}")
 
 
+def run_clips_audit(db, days=70):
+    """SYNC_MODE=clips_audit (read only): every clip saved on the events of the
+    last 'days' days, with its title and when it came out compared to the
+    fight's end, plus totals; and fighters' last-5 rows totals."""
+    index = []
+    for coll, platform in (("ytIndex", "youtube"), ("igIndex", "instagram")):
+        for snap in db.collection(coll).stream():
+            meta = snap.to_dict() or {}
+            if "chunks" not in meta:
+                continue
+            _, rows = yt_load_index(db, snap.id, coll)
+            for r in rows:
+                parts = r.split("|")
+                url = parts[0] if platform == "instagram" else f"https://www.youtube.com/watch?v={parts[0]}"
+                index.append({"url": url, "platform": platform, "at": datetime.fromtimestamp(int(parts[1]), timezone.utc),
+                              "letters": _flat(parts[-1]), "words": parts[-1], "label": meta.get("title") or f"@{snap.id}",
+                              "ufc": platform == "youtube" and "ufc" in (meta.get("title") or "").lower(), "video": True})
+    text = {e["url"]: e["words"] for e in index}
+    now = datetime.now(timezone.utc)
+    evs = sorted([s.to_dict() or {} for s in db.collection("events").where("start", ">=", now - timedelta(days=days)).stream()],
+                 key=lambda d: d.get("start"), reverse=True)
+    tot = have = yt = 0
+    for ev in [e for e in evs if e.get("start") and e["start"] < now]:
+        ends = fight_ends(ev, index)
+        done = [(k, f) for k, f in enumerate(ev.get("fights") or []) if f.get("winner")]
+        n = sum(1 for _, f in done if _clip_list(f))
+        tot, have = tot + len(done), have + n
+        yt += sum(1 for _, f in done if any(c.get("source") == "youtube" for c in _clip_list(f)))
+        print(f"\n===== {ev.get('name')} {ev['start']:%Y-%m-%d %H:%M} UTC: {n}/{len(done)} fights have a clip")
+        for k, f in done:
+            end = ends.get(k)
+            print(f"  {f.get('fighterA')} vs {f.get('fighterB')} (winner {f.get('winner')}) end~{end:%H:%M}" if end
+                  else f"  {f.get('fighterA')} vs {f.get('fighterB')} (winner {f.get('winner')}) end unknown")
+            for c in _clip_list(f):
+                at = c.get("at")
+                rel = f"{(at - end).total_seconds() / 60:+.0f} min after end" if isinstance(at, datetime) and end else (
+                    f"{at:%m-%d %H:%M}" if isinstance(at, datetime) else "?")
+                print(f"      {c.get('source')} [{c.get('channel')}] {rel} | {(text.get(c.get('url')) or '(not in index)')[:110]} | {c.get('url')}")
+    print(f"\nTOTAL events last {days} days: {have}/{tot} finished fights have a clip, {yt} with YouTube")
+    rows = rows_with = 0
+    for snap in db.collection("fighters").where("active", "==", True).stream():
+        for r in (snap.to_dict() or {}).get("recent") or []:
+            rows += 1
+            rows_with += 1 if r.get("clip") else 0
+    print(f"TOTAL fighters' last-5 rows: {rows_with}/{rows} have a clip")
+    photos = sum(1 for s in db.collection("fighters").where("active", "==", True).stream() if (s.to_dict() or {}).get("photo"))
+    print(f"TOTAL active fighters with a photo: {photos}")
+
+
 def run_clips_debug(db, events_n=3):
     """SYNC_MODE=clips_debug: prints, for the last few events, every official
     YouTube video and Instagram post around the event that names one of its
@@ -4070,7 +4119,9 @@ def main():
     if MODE == "clips_debug":
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
-            if os.environ.get("CLIPS_PROBE"):
+            if os.environ.get("CLIPS_AUDIT"):
+                run_clips_audit(db)
+            elif os.environ.get("CLIPS_PROBE"):
                 probe_accounts()
             else:
                 run_clips_debug(db)
