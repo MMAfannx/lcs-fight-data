@@ -2712,7 +2712,13 @@ def _words(text):
     t = unicodedata.normalize("NFKD", text or "")
     t = "".join(ch for ch in t if not unicodedata.combining(ch)).lower()
     t = _ar_norm(t).replace("ؤ", "و").replace("ئ", "ي")
+    t = "".join(_RU.get(ch, ch) for ch in t)  # UFC Eurasia's Russian titles: "Волкановски" -> "volkanovski"
     return " ".join(re.findall(r"[a-z]+|[\u0621-\u063a\u0641-\u064a]+", t))
+
+
+_RU = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюяі",
+               ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t",
+                "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya", "i"]))
 
 
 def _flat(words):
@@ -2741,6 +2747,13 @@ def _short_names(name, name_ar=""):
 
 # Whole words that mean a compilation of many fights, not this one.
 _COMPILATION = {"every", "career", "greatest", "compilation", "top", "best", "ever", "all-time", "alltime"}
+
+
+def _first_name_in(words, name, card_cnt):
+    """A first name / ring name of 5+ letters no one else on the card has ("Loopy", "Imanol")."""
+    toks = set(words.split())
+    first = [w for w in _words(strip_title(name or "")).split() if w not in _NAME_SUFFIX][:1]
+    return bool(first and len(first[0]) >= 5 and card_cnt and card_cnt.get(first[0]) == 1 and first[0] in toks)
 
 
 def _mentions_entry(letters, words, name, name_ar="", card_cnt=None, near=False):
@@ -2870,7 +2883,10 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "fala", "falou", "comenta", "comentou", "recado", "llegada", "llegan", "analisis", "habla",
                    "hablo", "mensaje", "reaccion", "reacciona",
                    # after the fight but not the fight: thanks, dedications, hype (EN)
-                   "givesthanks", "thanksto", "thankyou", "showinglove", "showslove", "dedicat", "hypedfor",
+                   # Russian (UFC Eurasia), transliterated by _words
+                   "intervyu", "presskonferen", "vzveshivan", "bitvavzglyad", "prognoz", "razbor", "reaktsi",
+                   "trenirovk", "pribyl", "pribyti", "mediaden", "otkrytayatrenir",
+                   "givesthanks", "thanksto", "thankyou", "showinglove", "showslove", "dedicat", "dedicou", "dedica", "hypedfor",
                    # the moment before the first bell, talk shows, hugs and reactions (EN/PT/ES)
                    "touchgloves", "touchedgloves", "touchinggloves", "finallymeet", "meetinside", "preshow",
                    "posshow", "postshow", "sportsmanship", "emote", "vibra", "reage", "comemora", "celebra",
@@ -2885,7 +2901,8 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "وصول", "يصل", "وصل", "مقابله", "مؤتمر", "الميزان", "الوزن", "وجهالوجه", "توقع", "تحليل",
                    "كواليس", "تدريب", "قبلالنزال", "بعدالنزال", "ردفعل", "احتفال", "يحتفل")
 # Words that show the post is about the fight's action or result.
-_CLIP_FIGHT = ("knockout", "knocks", "knocked", "tko", "submission", "submits", "submitted", "finish",
+_CLIP_FIGHT = ("nokaut", "pobed", "sabmishn", "udush", "luchshiemoment", "vyrubil",  # Russian
+               "knockout", "knocks", "knocked", "tko", "submission", "submits", "submitted", "finish",
                "highlight", "decision", "defeat", "beats", "victory", "andstill", "andnew", "newchamp",
                "retains", "wins", "thewin", "fullfight", "freefight", "nocaut", "finaliza", "mejoresmomentos",
                "melhoresmomentos", "peleacompleta", "lutacompleta", "flatline", "slept", "lightsout", "choke",
@@ -2910,7 +2927,8 @@ def _best_clip(fight, start, posts, until, card_cnt=None):
     Instagram must be a video, and never arrivals/walkouts/interviews."""
     best = None
     ended = fight.get("endedAt") if isinstance(fight.get("endedAt"), datetime) else None
-    lo = max(start - CLIP_EARLIEST, ended - timedelta(minutes=8)) if ended else start - CLIP_EARLIEST
+    # Never before the fight: at most 40 minutes before it ended (a long fight).
+    lo = max(start - CLIP_EARLIEST, ended - timedelta(minutes=40)) if ended else start - CLIP_EARLIEST
     for p in posts:
         if not (lo <= p["at"] <= until):
             continue
@@ -2924,9 +2942,17 @@ def _best_clip(fight, start, posts, until, card_cnt=None):
         a = _mentions_entry(p["text"], words, fight.get("fighterA", ""), fight.get("fighterAAr", ""), card_cnt, True)
         b = _mentions_entry(p["text"], words, fight.get("fighterB", ""), fight.get("fighterBAr", ""), card_cnt, True)
         winner = fight.get("winner", "")
+        if not (a or b) and ended and p["source"] == "youtube":
+            a = _first_name_in(words, fight.get("fighterA", ""), card_cnt)  # "Loopy takes the win"
+            b = _first_name_in(words, fight.get("fighterB", ""), card_cnt)
         if a and b:
             score = 3
+        elif (ended and p["source"] == "youtube" and (a or b)
+              and ended - timedelta(minutes=40) <= p["at"] <= ended + timedelta(minutes=12)
+              and not (winner and ((a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))))):
+            score = 0  # a moment from this fight on UFC's channel, naming the other fighter
         elif winner and ((a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))) and (
+                not ended or p["at"] >= ended - timedelta(minutes=8)) and (
                 not p.get("both_required") or any(w in p["text"] for w in _YT_RESULT)
                 or (ended and p["at"] <= ended + timedelta(minutes=25))):  # UFC's finish Short, minutes after the fight
             score = 1
@@ -3090,7 +3116,7 @@ YT_CHANNELS = [
     ("@tsn", ("TSN",), True),
     ("@UFCIndia", ("UFC India",), False),
 ]
-YT_INDEX_V = 3   # raise when _yt_keep changes: UFC's own channels are read again once
+YT_INDEX_V = 4   # raise when _yt_keep changes: UFC's own channels are read again once
 YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
                  "betting", "picks", "podcast", "vlog", "ranking", "entrevista", "conferencia", "previa",
@@ -3104,7 +3130,8 @@ _YT_FINISH = ("knockout", "knocks out", "knocked out", " ko", "tko", "submission
               "melhores momentos", "pelea completa", "luta completa")
 # Result words (letters only) in UFC's own fight-night Shorts that name only
 # the winner: "Grant Dawson takes the W", "Yakhyaev defeats Krylov", "PETR YAN AND STILL".
-_YT_RESULT = ("takesthew", "getsthew", "grabsthew", "takestheud", "takesthedecision", "getsthedecision",
+_YT_RESULT = ("nokaut", "nokdaun", "pobed", "sabmishn", "udush", "vyrubil", "zadushil",  # Russian (UFC Eurasia)
+              "takesthew", "getsthew", "grabsthew", "takestheud", "takesthedecision", "getsthedecision",
               "decisionw", "unanimous", "splitdecision", "winsit", "wins", "takesthewin", "getsthewin",
               "defeats", "beats", "andstill", "stillthechamp", "andnew", "getsthejobdone", "getsitdone",
               "jobdone", "finishes", "stops", "stoppage", "knocksout", "tko", "taps", "makeshimtap",
@@ -3318,7 +3345,7 @@ def _pair_key(a, b):
 
 
 def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_ar="", b_ar="", card=None,
-                    floor=None, ended=None, strict=False):
+                    floor=None, ended=None, strict=False, began=None, upper=None):
     """Official videos of fighter a vs fighter b on one platform, best first,
     posted between 'when' (fight day) and 'until' (the next time they met).
     Both names = match. A post naming only the winner also counts when it came
@@ -3345,6 +3372,14 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_a
             continue  # "Every Petr Yan Finish", "Career highlights", "Top 10 knockouts": not this fight
         ma = _mentions_entry(letters, words, a, a_ar, cnt, near)
         mb = _mentions_entry(letters, words, b, b_ar, cnt, near)
+        # During this fight (from the bout before it ending to just after it
+        # ends), a clip on UFC's own channels naming either fighter, even by
+        # first name, is footage from the fight.
+        w_lo = began - timedelta(minutes=2) if began else (ended - timedelta(minutes=40) if ended else None)
+        w_hi = ended + timedelta(minutes=12) if ended else upper  # later posts are mostly talk/reactions
+        in_fight = bool(platform == "youtube" and e.get("ufc") and w_lo and w_hi and w_lo <= e["at"] <= w_hi)
+        if in_fight and not (ma or mb):
+            ma, mb = _first_name_in(words, a, cnt), _first_name_in(words, b, cnt)
         if not (ma or mb) or not _clip_text_ok(letters, platform):
             continue
         score = _yt_score(letters)
@@ -3358,6 +3393,8 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_a
         elif (platform == "youtube" and e.get("ufc") and winner_only and ended
               and ended - timedelta(minutes=6) <= e["at"] <= ended + timedelta(minutes=25)):
             tier = 1  # UFC posts the finish as a Short right after the fight: "KODY STEELE IS HIM"
+        elif in_fight:
+            tier = 2  # a moment from the fight ("Marvin is pressing him", "BUCKLEY WENT TO SLEEP")
         elif (e["at"] <= (soon if platform == "instagram" else (ended or when) + timedelta(hours=6))
               and (platform == "instagram" or score >= 2) and winner_only
               and not any(w in letters for w in ("freefight", "fullfight", "peleacompleta", "lutacompleta"))):
@@ -3672,7 +3709,8 @@ def yt_clips_for_events(db, index, region=None, days=None):
                 until = _until(met, a, b, start)
                 cands = {p: clip_candidates(a, b, start, until, index, f.get("winner", ""), p,
                                             f.get("fighterAAr", ""), f.get("fighterBAr", ""), card,
-                                            clip_floor(doc, k, ends), ends.get(k))
+                                            clip_floor(doc, k, ends), ends.get(k),
+                                            began=ends.get(k + 1), upper=ends.get(k - 1))
                          for p in ("youtube", "instagram")}
                 vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
                 fresh += [_vid(e["url"]) for e in cands["youtube"][:6] if e["at"] > now - timedelta(days=10)]
