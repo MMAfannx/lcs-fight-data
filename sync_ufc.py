@@ -3600,6 +3600,32 @@ def _loose_keys(name):
     return {_letters(w) for w in re.split(r"\s+", strip_title(name or "")) if len(_letters(w)) >= 3}
 
 
+def probe_accounts():
+    """Read only: which UFC regional channels/accounts exist (name, size)."""
+    if YT_KEY:
+        for h in ("@UFCArabia", "@ufcarabic", "@UFCArabic", "@UFC_Arabia", "@UFCEurope", "@UFCIndia", "@ufcindiaofficial",
+                  "@UFCMENA", "@UFCMiddleEast", "@ufcespanol"):
+            try:
+                it = (_yt_get("channels", {"part": "snippet,statistics,contentDetails", "forHandle": h}).get("items") or [None])[0]
+                if it:
+                    print(f"PROBE YT {h}: {it['snippet'].get('title')!r} id={it['id']} subs={_yt_subs(it):,} "
+                          f"videos={(it.get('statistics') or {}).get('videoCount')} country={it['snippet'].get('country')}")
+                else:
+                    print(f"PROBE YT {h}: not found")
+            except Exception as e:
+                print(f"PROBE YT {h}: {type(e).__name__}")
+    if IG_TOKEN:
+        for u in ("ufcarabia", "ufc_arabia", "ufcarabic", "ufc.arabia", "ufcmena", "ufc_mena", "ufceurope", "ufcindia"):
+            try:
+                bd = _ig_page(u)
+                media = (bd.get("media") or {}).get("data") or []
+                vids = [m for m in media if m.get("media_type") == "VIDEO" or m.get("media_product_type") == "REELS"]
+                print(f"PROBE IG @{u}: {bd.get('name')!r} followers={int(bd.get('followers_count') or 0):,} "
+                      f"posts={len(media)} videos={len(vids)} sample={[m.get('permalink') for m in vids[:3]]}")
+            except Exception as e:
+                print(f"PROBE IG @{u}: {type(e).__name__}")
+
+
 def run_clips_debug(db, events_n=3):
     """SYNC_MODE=clips_debug: prints, for the last few events, every official
     YouTube video and Instagram post around the event that names one of its
@@ -3741,7 +3767,10 @@ def main():
     if MODE == "clips_debug":
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
-            run_clips_debug(db)
+            if os.environ.get("CLIPS_PROBE"):
+                probe_accounts()
+            else:
+                run_clips_debug(db)
         print("Done.")
         return
     if MODE in ("clips", "clips_backfill"):

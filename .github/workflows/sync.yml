@@ -58,3 +58,4 @@ jobs:
           IG_PAGE_TOKEN: ${{ secrets.IG_PAGE_TOKEN }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           SYNC_MODE: clips_debug
+          CLIPS_PROBE: ${{ inputs.from_year == 'probe' && '1' || '' }}
