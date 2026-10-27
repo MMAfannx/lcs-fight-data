@@ -2728,6 +2728,8 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "storyof", "documentary", "deolho", "analise", "analisa", "chegada", "chegou", "chegam",
                    "fala", "falou", "comenta", "comentou", "recado", "llegada", "llegan", "analisis", "habla",
                    "hablo", "mensaje", "reaccion", "reacciona",
+                   # pre-shows, and "Free Fight" uploads (usually an older fight between them)
+                   "preshow", "pregame", "freefight", "peleagratis", "lutagratis", "combategratis",
                    # Arabic: arrival, interview, press conference, weigh-in, face-off, predictions, training, celebration
                    "وصول", "يصل", "وصل", "مقابله", "مؤتمر", "الميزان", "الوزن", "وجهالوجه", "توقع", "تحليل",
                    "كواليس", "تدريب", "قبلالنزال", "بعدالنزال", "ردفعل", "احتفال", "يحتفل")
@@ -2781,6 +2783,22 @@ def _best_clip(fight, start, posts, until, card_cnt=None):
         if best is None or key < best[0]:
             best = (key, p)
     return best[1] if best else None
+
+
+def _drop_stale(row, valid, indexed):
+    """Removes saved clips that are in the index but that the current rules no
+    longer match to this fight (old matches made before a rule was fixed).
+    Clips not in the index (found live) are kept. Returns how many were removed."""
+    clips = _clip_list(row)
+    keep = [c for c in clips if c.get("url") not in indexed or c.get("url") in valid]
+    if len(keep) == len(clips):
+        return 0
+    row.pop("clip", None)
+    row.pop("clips", None)
+    if keep:
+        keep.sort(key=_clip_rank)
+        row["clip"], row["clips"] = keep[0], keep
+    return len(clips) - len(keep)
 
 
 def _clip_list(f):
@@ -3438,11 +3456,16 @@ def yt_clips_for_events(db, index, region=None, days=None):
     report = []
     text_of = {e["url"]: e.get("words") or e["letters"] for e in index}
     added = []  # (event, fight, clip) for the report
+    stale = 0
     for snap, doc in events:
         fights = [dict(f) for f in doc.get("fights") or []]
         changed = False
         for k, cands in by_event.get(snap.id, []):
             f = fights[k]
+            gone = _drop_stale(f, {e["url"] for p in cands for e in cands[p]}, text_of)
+            if gone:
+                stale += gone
+                changed = True
             new = _pick(cands["youtube"], "youtube", region) + _pick(cands["instagram"], "instagram", region)
             before = len(_clip_list(f))
             old_urls = {c.get("url") for c in _clip_list(f)}
@@ -3485,6 +3508,7 @@ def yt_clips_for_events(db, index, region=None, days=None):
         print(f"Random new matches ({min(10, len(added))} of {len(added)}):")
         for ev, fight, c in random.sample(added, min(10, len(added))):
             print(f"  [{ev}] {fight} -> {c.get('source')} {c.get('channel')}: {text_of.get(c.get('url'), '?')[:110]!r} {c.get('url')}")
+    print(f"Old matches the current rules reject, removed: {stale}")
     print(f"Official clips: {found} new. Finished fights checked: {have}/{total} have a clip"
           + (f" ({100 * have // total}%)" if total else "") + f", {multi} with a choice of sources")
 
@@ -3503,6 +3527,7 @@ def yt_clips_for_fighters(db, index, region=None):
             if f.get("clip") and ev.get("start"):
                 clips[(_pair_key(f.get("fighterA", ""), f.get("fighterB", "")), ev["start"].date())] = _clip_list(f)
     docs = [(snap, snap.to_dict() or {}) for snap in db.collection("fighters").stream()]
+    indexed = {e["url"] for e in index or []}
     plan, vids = {}, []
     for snap, d in docs:
         for k, r in enumerate(d.get("recent") or []):
@@ -3527,6 +3552,8 @@ def yt_clips_for_fighters(db, index, region=None):
                             if key == pk and abs((day - when.date()).days) <= 2), [])
                 cands = plan.get((snap.id, k))
                 if cands:
+                    valid = {e["url"] for p in cands for e in cands[p]} | {c.get("url") for c in new}
+                    changed |= bool(_drop_stale(r, valid, indexed))
                     new = new + _pick(cands["youtube"], "youtube", region) + _pick(cands["instagram"], "instagram", region)
                 changed |= _merge_clips(r, new)
             rows_all += 1
