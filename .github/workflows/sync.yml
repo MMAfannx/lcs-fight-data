@@ -60,3 +60,4 @@ jobs:
           SYNC_MODE: clips_debug
           CLIPS_PROBE: ${{ inputs.from_year == 'probe' && '1' || '' }}
           CLIPS_AUDIT: ${{ inputs.from_year == 'audit' && '1' || '' }}
+          CLIPS_PHOTOS: ${{ inputs.from_year == 'photos' && '1' || '' }}

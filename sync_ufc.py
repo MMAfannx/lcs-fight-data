@@ -3970,6 +3970,32 @@ def probe_accounts():
                 print(f"PROBE IG @{u}: {type(e).__name__}")
 
 
+def photo_search_report(names):
+    """Read only: what a Commons search returns for these fighters, and why each file is kept or not."""
+    for name in names:
+        params = {"action": "query", "generator": "search", "gsrsearch": f'intitle:"{name}"', "gsrnamespace": "6",
+                  "gsrlimit": "15", "prop": "imageinfo|categories", "iiprop": "url|extmetadata|size",
+                  "iiurlwidth": "400", "cllimit": "max", "clshow": "!hidden", "format": "json", "formatversion": "2"}
+        try:
+            data = requests.get("https://commons.wikimedia.org/w/api.php", params=params, headers=HEADERS, timeout=30).json()
+        except Exception as e:
+            print(f"PHOTO {name}: request failed {type(e).__name__}")
+            continue
+        pages = (data.get("query") or {}).get("pages", [])
+        print(f"PHOTO {name}: {len(pages)} file(s) {str(data.get('error') or '')[:200]}")
+        for page in pages[:10]:
+            ii = (page.get("imageinfo") or [{}])[0]
+            meta = ii.get("extmetadata") or {}
+            about = " ".join([page.get("title", ""), _plain((meta.get("ImageDescription") or {}).get("value", "")),
+                              _plain((meta.get("Categories") or {}).get("value", ""))]
+                             + [c.get("title", "") for c in page.get("categories") or []])
+            print(f"   {page.get('title')} | solo={not _OV_NOT_SOLO.search(page.get('title', ''))} "
+                  f"mma={bool(_COMMONS_MMA.search(about))} lic={_plain((meta.get('LicenseShortName') or {}).get('value', ''))} "
+                  f"w={ii.get('width')} | {about[:160]}")
+        time.sleep(0.5)
+    print(f"commons_photo: {[ (n, bool(commons_photo(n))) for n in names]}")
+
+
 def run_clips_audit(db, days=70):
     """SYNC_MODE=clips_audit (read only): every clip saved on the events of the
     last 'days' days, with its title and when it came out compared to the
@@ -4160,7 +4186,10 @@ def main():
     if MODE == "clips_debug":
         db = firestore_client() if "FIREBASE_SERVICE_ACCOUNT" in os.environ else None
         if db is not None:
-            if os.environ.get("CLIPS_AUDIT"):
+            if os.environ.get("CLIPS_PHOTOS"):
+                photo_search_report(["Rafael dos Anjos", "Jack Della Maddalena", "Joaquin Buckley", "Brandon Royval",
+                                     "Amir Albazi", "Bryce Mitchell", "Erin Blanchfield", "Lerone Murphy"])
+            elif os.environ.get("CLIPS_AUDIT"):
                 run_clips_audit(db)
             elif os.environ.get("CLIPS_PROBE"):
                 probe_accounts()
