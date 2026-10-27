@@ -2474,6 +2474,8 @@ def bdl_fill_results(start, fights):
                 if f.get("winner"):
                     f["method"] = method
                     filled += 1
+                    if _LIVE_NOW:  # seen within a minute: clips can't be older than this fight
+                        f["endedAt"] = now
         out.append(f)
     if filled:
         print(f"  BALLDONTLIE filled {filled} result(s)")
@@ -2481,6 +2483,7 @@ def bdl_fill_results(start, fights):
 
 
 LIVE_MINUTES = int(os.environ.get("LIVE_MINUTES", "50"))
+_LIVE_NOW = []  # non-empty while live_watch runs: results seen now are fresh, so their time is the fight's end
 LIVE_EVERY = 60  # seconds between BALLDONTLIE checks during a live event
 
 
@@ -2492,6 +2495,7 @@ def live_watch(active):
     if not BDL_KEY or not active:
         return
     print(f"Live watch: {len(active)} event(s), every {LIVE_EVERY}s for up to {LIVE_MINUTES} min")
+    _LIVE_NOW.append(True)
     deadline = time.time() + LIVE_MINUTES * 60
     rounds = 0
     while active and time.time() + LIVE_EVERY < deadline:
@@ -2728,6 +2732,12 @@ _CLIP_NOT_FIGHT = ("arriv", "walkout", "walksout", "walkingout", "warmup", "warm
                    "storyof", "documentary", "deolho", "analise", "analisa", "chegada", "chegou", "chegam",
                    "fala", "falou", "comenta", "comentou", "recado", "llegada", "llegan", "analisis", "habla",
                    "hablo", "mensaje", "reaccion", "reacciona",
+                   # after the fight but not the fight: thanks, dedications, hype (EN)
+                   "givesthanks", "thanksto", "thankyou", "showinglove", "showslove", "dedicat", "hypedfor",
+                   # Arabic (@ufcmena), normalized like _words: arrivals, press, interviews, talk,
+                   # greetings, thanks, messages, preparation, warm-up, backstage, weigh-in, face to face
+                   "وصلوا", "وصول", "مؤتمر", "مقابله", "يتحدث", "تحيه", "يشكر", "رساله", "استعداد",
+                   "الاحماء", "كواليس", "الميزان", "وجهالوجه",
                    # pre-shows, and "Free Fight" uploads (usually an older fight between them)
                    "preshow", "pregame", "freefight", "peleagratis", "lutagratis", "combategratis",
                    # Arabic: arrival, interview, press conference, weigh-in, face-off, predictions, training, celebration
@@ -2758,8 +2768,10 @@ def _best_clip(fight, start, posts, until, card_cnt=None):
     also matches (UFC often captions finish clips with just the winner).
     Instagram must be a video, and never arrivals/walkouts/interviews."""
     best = None
+    ended = fight.get("endedAt") if isinstance(fight.get("endedAt"), datetime) else None
+    lo = max(start - CLIP_EARLIEST, ended - timedelta(minutes=8)) if ended else start - CLIP_EARLIEST
     for p in posts:
-        if not (start - CLIP_EARLIEST <= p["at"] <= until):
+        if not (lo <= p["at"] <= until):
             continue
         if p["source"] == "instagram" and not p["video"]:
             continue
@@ -2774,7 +2786,8 @@ def _best_clip(fight, start, posts, until, card_cnt=None):
         if a and b:
             score = 3
         elif winner and ((a and winner == fight.get("fighterA")) or (b and winner == fight.get("fighterB"))) and (
-                not p.get("both_required") or any(w in p["text"] for w in _YT_RESULT)):
+                not p.get("both_required") or any(w in p["text"] for w in _YT_RESULT)
+                or (ended and p["at"] <= ended + timedelta(minutes=25))):  # UFC's finish Short, minutes after the fight
             score = 1
         else:
             continue
@@ -3163,14 +3176,18 @@ def _pair_key(a, b):
     return "|".join(sorted([norm(a), norm(b)]))
 
 
-def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_ar="", b_ar="", card=None):
+def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_ar="", b_ar="", card=None,
+                    floor=None, ended=None, strict=False):
     """Official videos of fighter a vs fighter b on one platform, best first,
     posted between 'when' (fight day) and 'until' (the next time they met).
     Both names = match. A post naming only the winner also counts when it came
     out within 4 days (YouTube: with a finish word; Instagram: a video/Reel).
-    Instagram posts must be videos (fight graphics are photos)."""
+    Instagram posts must be videos (fight graphics are photos).
+    floor: nothing older than this (the fight's end, so no pre-fight footage).
+    ended: when the fight ended; a UFC-channel Short naming the winner within
+    minutes of it is the finish clip. strict: both fighters must be named."""
     out = []
-    lo = when - CLIP_EARLIEST
+    lo = max(when - CLIP_EARLIEST, floor) if floor else when - CLIP_EARLIEST
     soon = when + timedelta(days=4)
     cnt = _card_count(card) if card else None
     week = when + timedelta(days=5)
@@ -3192,7 +3209,14 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_a
         score = _yt_score(letters)
         winner_only = (ma and wa) or (mb and wb)
         if ma and mb:
+            if strict and platform == "youtube" and score < 2 and not any(w in letters for w in _YT_RESULT):
+                continue  # old fights: "A vs B" alone can be a preview
             tier = 0
+        elif strict:
+            continue
+        elif (platform == "youtube" and e.get("ufc") and winner_only and ended
+              and ended - timedelta(minutes=6) <= e["at"] <= ended + timedelta(minutes=25)):
+            tier = 1  # UFC posts the finish as a Short right after the fight: "KODY STEELE IS HIM"
         elif (e["at"] <= soon and (platform == "instagram" or score >= 2) and winner_only
               and not any(w in letters for w in ("freefight", "fullfight", "peleacompleta", "lutacompleta"))):
             tier = 1
@@ -3205,6 +3229,43 @@ def clip_candidates(a, b, when, until, index, winner="", platform="youtube", a_a
         out.append(((tier, -score, 0 if e["label"] in ("UFC", "@ufc") else 1, e["at"]), e))
     out.sort(key=lambda x: x[0])
     return [e for _, e in out]
+
+
+PRELIMS_BEFORE = timedelta(hours=4, minutes=30)  # earliest prelims start before the main card time
+
+
+def fight_ends(doc, index):
+    """{fight index: when it ended (about)} for one event. Saved live
+    ('endedAt'), else from UFC's own "<fighter> Octagon Interview" upload,
+    which comes out a few minutes after the fight."""
+    start = doc.get("start")
+    out = {}
+    if not start:
+        return out
+    talks = [e for e in index or [] if e["platform"] == "youtube" and e.get("ufc")
+             and "octagoninterview" in e["letters"] and start - PRELIMS_BEFORE <= e["at"] <= start + timedelta(hours=10)]
+    for k, f in enumerate(doc.get("fights") or []):
+        if isinstance(f.get("endedAt"), datetime):
+            out[k] = f["endedAt"]
+            continue
+        hits = [e["at"] for e in talks for side in ("fighterA", "fighterB")
+                if f.get(side) and _mentions_entry(e["letters"], e.get("words") or e["letters"], f[side], "", None, False)]
+        if hits:
+            out[k] = min(hits) - timedelta(minutes=4)
+    return out
+
+
+def clip_floor(doc, k, ends):
+    """Clips of fight k can't be older than this: the fight's own end (minus a
+    few minutes), else the end of the bout before it on the card (fights are
+    listed main event first), else the start of the prelims."""
+    if k in ends:
+        return ends[k] - timedelta(minutes=8)
+    fights = doc.get("fights") or []
+    for j in range(k + 1, len(fights)):
+        if j in ends:
+            return ends[j] - timedelta(minutes=2)
+    return doc["start"] - PRELIMS_BEFORE
 
 
 def _clip_from(e):
@@ -3439,12 +3500,14 @@ def yt_clips_for_events(db, index, region=None, days=None):
         if not start or start > now or (days and start < now - timedelta(days=days)):
             continue
         card = [(f.get(s), f.get(s + "Ar")) for f in doc.get("fights") or [] for s in ("fighterA", "fighterB")]
+        ends = fight_ends(doc, index)
         for k, f in enumerate(doc.get("fights") or []):
             if f.get("winner"):
                 a, b = f.get("fighterA", ""), f.get("fighterB", "")
                 until = _until(met, a, b, start)
                 cands = {p: clip_candidates(a, b, start, until, index, f.get("winner", ""), p,
-                                            f.get("fighterAAr", ""), f.get("fighterBAr", ""), card)
+                                            f.get("fighterAAr", ""), f.get("fighterBAr", ""), card,
+                                            clip_floor(doc, k, ends), ends.get(k))
                          for p in ("youtube", "instagram")}
                 vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
                 plan.append((snap.id, k, cands))
@@ -3522,10 +3585,16 @@ def yt_clips_for_fighters(db, index, region=None):
     clips = {}
     evs = [s.to_dict() or {} for s in db.collection("events").stream()]
     met = _meetings(evs)
+    # Every finished fight we have: its clips (checked against the fight's real
+    # time) are the ones a fighter's last-5 row shows, even when there are none.
     for ev in evs:
         for f in ev.get("fights") or []:
-            if f.get("clip") and ev.get("start"):
+            if f.get("winner") and ev.get("start"):
                 clips[(_pair_key(f.get("fighterA", ""), f.get("fighterB", "")), ev["start"].date())] = _clip_list(f)
+
+    def event_clips(pk, when):
+        return next((c for (key, day), c in clips.items() if key == pk and abs((day - when.date()).days) <= 2), None)
+
     docs = [(snap, snap.to_dict() or {}) for snap in db.collection("fighters").stream()]
     indexed = {e["url"] for e in index or []}
     plan, vids = {}, []
@@ -3535,8 +3604,13 @@ def yt_clips_for_fighters(db, index, region=None):
             if not when or not index:
                 continue
             me, opp = d.get("name", ""), r.get("opponent", "")
+            if event_clips(_pair_key(me, opp), when) is not None:
+                continue  # a fight on one of our events: use that event's clips
             won = me if r.get("outcome") == "W" else opp if r.get("outcome") == "L" else ""
-            cands = {p: clip_candidates(me, opp, when, _until(met, me, opp, when), index, won, p, d.get("nameAr", ""))
+            # Older fights (not on our events): we only know the day, so both
+            # names, a fight/result word, and nothing from before that evening.
+            cands = {p: clip_candidates(me, opp, when, _until(met, me, opp, when), index, won, p, d.get("nameAr", ""),
+                                        floor=when + timedelta(hours=12), strict=True)
                      for p in ("youtube", "instagram")}
             vids += [_vid(e["url"]) for e in cands["youtube"][:6]]
             plan[(snap.id, k)] = cands
@@ -3548,8 +3622,18 @@ def yt_clips_for_fighters(db, index, region=None):
             when = r.get("date")
             if when:
                 pk = _pair_key(d.get("name", ""), r.get("opponent", ""))
-                new = next((c for (key, day), c in clips.items()
-                            if key == pk and abs((day - when.date()).days) <= 2), [])
+                same = event_clips(pk, when)
+                if same is not None:
+                    if [c.get("url") for c in _clip_list(r)] != [c.get("url") for c in same]:
+                        r.pop("clip", None)
+                        r.pop("clips", None)
+                        if same:
+                            r["clip"], r["clips"] = same[0], list(same)
+                        changed = True
+                    rows_all += 1
+                    rows_with += 1 if r.get("clip") else 0
+                    continue
+                new = []
                 cands = plan.get((snap.id, k))
                 if cands:
                     valid = {e["url"] for p in cands for e in cands[p]} | {c.get("url") for c in new}
@@ -4004,6 +4088,11 @@ def main():
                 if not f.get("winner") and f.get("id") in prev else f
                 for f in fights
             ]
+            # Keep when each fight ended (saved live) for the clip rules.
+            ended = {f.get("id"): f["endedAt"] for f in old["fights"] if f.get("endedAt")}
+            for f in fights:
+                if f.get("id") in ended and not f.get("endedAt"):
+                    f["endedAt"] = ended[f["id"]]
             # Keep highlight clips found earlier (Wikipedia doesn't have them).
             clips = {f.get("id"): f for f in old["fights"] if f.get("clip")}
             for f in fights:
