@@ -4119,6 +4119,27 @@ def run_clips_audit(db, days=70):
                     f"{at:%m-%d %H:%M}" if isinstance(at, datetime) else "?")
                 print(f"      {c.get('source')} [{c.get('channel')}] {rel} | {(text.get(c.get('url')) or '(not in index)')[:110]} | {c.get('url')}")
     print(f"\nTOTAL events last {days} days: {have}/{tot} finished fights have a clip, {yt} with YouTube")
+    # Fights without a clip: what the index has around them (any language), and why it's not used.
+    print("\n===== MISSING: index posts naming a fighter of a fight without a clip")
+    for ev in [e for e in evs if e.get("start") and e["start"] < now][:5]:
+        start = ev["start"]
+        print(f"-- {ev.get('name')}")
+        for f in ev.get("fights") or []:
+            if not f.get("winner") or _clip_list(f):
+                continue
+            keys = _loose_keys(f.get("fighterA")) | _loose_keys(f.get("fighterB"))
+            rows = [e for e in index if start - timedelta(hours=6) <= e["at"] <= start + timedelta(days=4)
+                    and any(k in e["letters"] for k in keys if len(k) >= 4)]
+            print(f"  {f.get('fighterA')} vs {f.get('fighterB')} (winner {f.get('winner')}): {len(rows)} post(s)")
+            for e in sorted(rows, key=lambda x: x["at"])[:8]:
+                print(f"      {e['platform']} [{e['label']}] {e['at']:%m-%d %H:%M} text_ok={_clip_text_ok(e['letters'], e['platform'])} | {e['words'][:110]}")
+    # Channels whose titles aren't in Latin/Arabic letters (empty words in the index).
+    for snap in db.collection("ytIndex").stream():
+        meta = snap.to_dict() or {}
+        if "chunks" in meta:
+            _, rows = yt_load_index(db, snap.id)
+            empty = sum(1 for r in rows if not r.split("|", 2)[2].strip())
+            print(f"YT index {meta.get('title')}: {len(rows)} rows, {empty} with no readable title")
     rows = rows_with = 0
     for snap in db.collection("fighters").where("active", "==", True).stream():
         for r in (snap.to_dict() or {}).get("recent") or []:
