@@ -960,6 +960,50 @@ def _sent(ref, doc, key):
     return bool(doc.get(key) or _state(ref).get(key))
 
 
+def lock_picks(ref, doc):
+    """When a fight begins, freeze everyone's pick for it in
+    pickLocks/{event}_{fight} (only the bot can read or write there). Scoring
+    uses the frozen pick, so changing picks during the night doesn't help, and
+    re-saving other picks never costs a fan the fights already under way."""
+    if MODE == "backfill":
+        return
+    start, fights = doc.get("start"), doc.get("fights") or []
+    now = datetime.now(timezone.utc)
+    if not start or not fights or not (start - PRELIMS_BEFORE <= now <= start + timedelta(hours=12)):
+        return
+    done = set(_state(ref).get("picksLocked") or [])
+    todo = []
+    for k, f in enumerate(fights):
+        fid = f.get("id")
+        if not fid or fid in done:
+            continue
+        before = fights[k + 1] if k + 1 < len(fights) else None
+        begun = (f.get("winner") or fid in _bdl_live or (before is not None and before.get("winner"))
+                 or (before is None and now >= start - timedelta(hours=3, minutes=5)))
+        if begun:
+            todo.append(fid)
+    if not todo:
+        return
+    from firebase_admin import firestore
+    db = firestore.client()
+    try:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        query = db.collection("picks").where(filter=FieldFilter("eventId", "==", ref.id))
+    except ImportError:
+        query = db.collection("picks").where("eventId", "==", ref.id)
+    frozen = {fid: {} for fid in todo}
+    for snap in query.stream():
+        p = snap.to_dict() or {}
+        uid, picks = p.get("uid"), p.get("picks") or {}
+        for fid in todo:
+            if uid and picks.get(fid):
+                frozen[fid][uid] = [picks[fid], (p.get("methods") or {}).get(fid, ""), str((p.get("rounds") or {}).get(fid, ""))]
+    for fid, rows in frozen.items():
+        db.collection("pickLocks").document(f"{ref.id}_{fid}").set({"picks": rows, "at": now})
+    _save_state(ref, {"picksLocked": sorted(done | set(todo))})
+    print(f"  picks frozen for {len(todo)} fight(s): {sum(len(r) for r in frozen.values())} pick(s)")
+
+
 def check_alerts(ref, doc):
     """Event starting within the hour, and main event result. Each is sent once."""
     if MODE == "backfill":
@@ -2113,9 +2157,14 @@ def score_event(db, ref, event_id, doc):
     results = {f.get("id"): f.get("winner", "") for f in fights}
     how = {f.get("id"): method_kind(f.get("method", "")) for f in fights}
     main_id = next((f.get("id") for f in fights if f.get("isMain")), None)
-    # When each fight began = when the bout before it ended (saved live). A
-    # pick saved after its fight began doesn't count: older app versions let
-    # fans change picks until the main card, after the prelims were decided.
+    # Picks frozen when each fight began (lock_picks): those are what count.
+    locks = {}
+    for f in fights:
+        snap = db.collection("pickLocks").document(f"{event_id}_{f.get('id')}").get()
+        if snap.exists:
+            locks[f.get("id")] = (snap.to_dict() or {}).get("picks") or {}
+    # No frozen picks (the bot missed it): a pick saved after its fight began
+    # (= the bout before it ended, saved live) doesn't count.
     began = {}
     for k, f in enumerate(fights):
         before = fights[k + 1] if k + 1 < len(fights) else None
@@ -2137,11 +2186,20 @@ def score_event(db, ref, event_id, doc):
         methods = pick.get("methods") or {}
         rounds = pick.get("rounds") or {}
         saved = pick.get("updated")
-        for fight_id, choice in (pick.get("picks") or {}).items():
+        methods, rounds = dict(methods), dict(rounds)
+        chosen = dict(pick.get("picks") or {})
+        for fight_id, rows in locks.items():
+            row = rows.get(uid)
+            if row:
+                chosen[fight_id], methods[fight_id], rounds[fight_id] = row[0], row[1], row[2]
+            else:
+                chosen.pop(fight_id, None)  # no pick when the fight began
+        for fight_id, choice in chosen.items():
             winner = results.get(fight_id)
             if not winner or winner in ("Draw", "No contest"):
                 continue  # no result, or no winner to guess
-            if isinstance(saved, datetime) and fight_id in began and saved > began[fight_id]:
+            if (fight_id not in locks and isinstance(saved, datetime) and fight_id in began
+                    and saved > began[fight_id]):
                 continue  # picked after this fight had started
             total += 1
             if choice == winner:
@@ -2591,6 +2649,10 @@ def live_watch(active):
                 doc["fights"] = filled
                 check_alerts(ref, doc)
                 check_fight_alerts(ref, doc)
+                try:
+                    lock_picks(ref, doc)
+                except Exception as e:
+                    print(f"  picks lock failed: {type(e).__name__}")
                 if rounds % 3 == 0:  # official clips: every ~3 minutes
                     _clip_cache.clear()
                     try:
@@ -4342,6 +4404,10 @@ def main():
             check_fight_alerts(ref, {**old, **new})
         except Exception as e:
             print(f"  fight alert failed: {e}")
+        try:
+            lock_picks(ref, {**old, **new})
+        except Exception as e:
+            print(f"  picks lock failed: {type(e).__name__}")
         try:
             find_clips(ref, {**old, **new})
         except Exception as e:
