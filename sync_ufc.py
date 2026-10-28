@@ -556,10 +556,9 @@ def _plain(html):
 
 
 # Wikipedias checked for a fighter's photo when the English page has none.
-PHOTO_LANGS = ["pt", "es", "ru", "fr", "pl", "de", "it", "nl", "uk", "sv", "ar", "ja", "ko",
-               # Oct 28: many fighters come from the Caucasus, Central Asia and Eastern Europe
-               "tr", "fa", "ka", "az", "kk", "he", "cs", "hu", "ro", "bg", "sr", "hr", "zh", "fi", "lt", "lv",
-               "hy", "be"]
+# Not more (Oct 28 test): the Persian page of Robelis Despaigne leads with a
+# photo of another man; smaller wikis are checked less, so wrong faces slip in.
+PHOTO_LANGS = ["pt", "es", "ru", "fr", "pl", "de", "it", "nl", "uk", "sv", "ar", "ja", "ko"]
 
 
 def fighter_photos(titles, width=400):
@@ -801,6 +800,10 @@ def commons_photo(name):
 # structured data says they depict this fighter, and its Commons category
 # (file named after the fighter). Every file: on Commons, free license, jpg/png,
 # 300 px wide or more, and its structured data names no other person.
+# NOT USED FOR WRITING. Oct 28 test (clips_debug, from_year=wikidata): 256 of
+# 467 fighters without a photo have an item, but only 4 files came back and,
+# checked by eye, 2 were wrong (another man; a UFC event photo marked CC0) and
+# 2 unsure. Kept as a read-only report.
 WIKIDATA_PER_RUN = 250
 WD_API = "https://www.wikidata.org/w/api.php"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
