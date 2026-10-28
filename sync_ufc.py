@@ -556,7 +556,10 @@ def _plain(html):
 
 
 # Wikipedias checked for a fighter's photo when the English page has none.
-PHOTO_LANGS = ["pt", "es", "ru", "fr", "pl", "de", "it", "nl", "uk", "sv", "ar", "ja", "ko"]
+PHOTO_LANGS = ["pt", "es", "ru", "fr", "pl", "de", "it", "nl", "uk", "sv", "ar", "ja", "ko",
+               # Oct 28: many fighters come from the Caucasus, Central Asia and Eastern Europe
+               "tr", "fa", "ka", "az", "kk", "he", "cs", "hu", "ro", "bg", "sr", "hr", "zh", "fi", "lt", "lv",
+               "hy", "be"]
 
 
 def fighter_photos(titles, width=400):
@@ -787,6 +790,241 @@ def commons_photo(name):
         return {"url": ii["thumburl"], "credit": _plain(value("Artist")) or "Wikimedia Commons",
                 "license": license_name, "page": ii.get("descriptionurl", ""), "source": "commons"}
     return None
+
+
+# More free photos through Wikidata (Oct 28), for fighters still without one.
+# Their Wikidata item comes from the English page, or (no English page, common
+# for new signings) from an exact name search: only a human whose occupation
+# or sport is MMA, whose birth year / citizenship agree with the roster, and
+# only when exactly one item passes. Then, best first: the item's photo (P18),
+# the lead photo of its other-language Wikipedias, Commons files whose
+# structured data says they depict this fighter, and its Commons category
+# (file named after the fighter). Every file: on Commons, free license, jpg/png,
+# 300 px wide or more, and its structured data names no other person.
+WIKIDATA_PER_RUN = 250
+WD_API = "https://www.wikidata.org/w/api.php"
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+Q_HUMAN, Q_MMA_FIGHTER, Q_MMA = "Q5", "Q11607585", "Q114466"
+
+
+def _claim_ids(entity, prop):
+    """Values of one Wikidata/Commons statement: item ids or plain strings."""
+    out = []
+    for c in ((entity or {}).get("claims") or (entity or {}).get("statements") or {}).get(prop, []):
+        v = ((c.get("mainsnak") or {}).get("datavalue") or {}).get("value")
+        if isinstance(v, dict) and v.get("id"):
+            out.append(v["id"])
+        elif isinstance(v, str) and v:
+            out.append(v)
+    return out
+
+
+def _birth_year(entity):
+    for c in ((entity or {}).get("claims") or {}).get("P569", []):
+        v = ((c.get("mainsnak") or {}).get("datavalue") or {}).get("value") or {}
+        m = re.match(r"\+(\d{4})-", v.get("time", ""))
+        if m and int(v.get("precision") or 0) >= 9:
+            return int(m.group(1))
+    return None
+
+
+def _is_mma_human(entity):
+    return Q_HUMAN in _claim_ids(entity, "P31") and (
+        Q_MMA_FIGHTER in _claim_ids(entity, "P106") or Q_MMA in _claim_ids(entity, "P641"))
+
+
+def _back_titles(data):
+    back = {n["to"]: n["from"] for n in data.get("normalized", [])}
+    for r in data.get("redirects", []):
+        back[r["to"]] = back.get(r["from"], r["from"])
+    return back
+
+
+def wikidata_photos(fighters, width=400, report=None):
+    """fighters: [{"id", "name", "link", "age", "iso"}] -> {id: photo} (see above).
+    report: a list that gets one line per fighter (read-only reports)."""
+    calls = [0]
+
+    def get(url, params):
+        calls[0] += 1
+        r = requests.get(url, params={**params, "format": "json"}, headers=HEADERS, timeout=30).json()
+        time.sleep(0.3)
+        return r
+
+    def entities(ids, api=WD_API, props="claims|sitelinks"):
+        out = {}
+        for i in range(0, len(ids), 50):
+            try:
+                out.update(get(api, {"action": "wbgetentities", "ids": "|".join(ids[i:i + 50]),
+                                     "props": props}).get("entities") or {})
+            except Exception as e:
+                print(f"  Wikidata entities skipped: {type(e).__name__}")
+        return {k: v for k, v in out.items() if "missing" not in v}
+
+    now_year = datetime.now(timezone.utc).year
+    qid, via, why = {}, {}, {}
+    # 1) English page -> its Wikidata item
+    by_link = {f["link"]: f["id"] for f in fighters if f.get("link")}
+    links = sorted(by_link)
+    for i in range(0, len(links), 50):
+        try:
+            data = get(API, {"action": "query", "prop": "pageprops", "ppprop": "wikibase_item", "redirects": "1",
+                             "titles": "|".join(links[i:i + 50]), "formatversion": "2"}).get("query", {})
+        except Exception as e:
+            print(f"  Wikidata ids skipped: {type(e).__name__}")
+            continue
+        back = _back_titles(data)
+        for page in data.get("pages", []):
+            q = (page.get("pageprops") or {}).get("wikibase_item")
+            t = back.get(page["title"], page["title"])
+            if q and t in by_link:
+                qid[by_link[t]], via[by_link[t]] = q, "page"
+    # 2) no English page: items whose label or alias is exactly the name
+    cands = {}
+    for f in fighters:
+        if f["id"] in qid:
+            continue
+        want = _letters(f["name"])
+        try:
+            res = get(WD_API, {"action": "wbsearchentities", "search": strip_title(f["name"]), "language": "en",
+                               "uselang": "en", "type": "item", "limit": "10"}).get("search") or []
+        except Exception as e:
+            print(f"  Wikidata search skipped: {type(e).__name__}")
+            break
+        cands[f["id"]] = sorted({r["id"] for r in res
+                                 if _letters((r.get("match") or {}).get("text") or r.get("label") or "") == want})
+    ents = entities(sorted(set(qid.values()) | {q for c in cands.values() for q in c}))
+    countries = entities(sorted({c for e in ents.values() for c in _claim_ids(e, "P27")}), props="claims")
+    codes = {c: set(_claim_ids(e, "P298")) | set(_claim_ids(e, "P984")) for c, e in countries.items()}
+    for f in fighters:
+        if f["id"] in qid or f["id"] not in cands:
+            continue
+        ok = []
+        for q in cands[f["id"]]:
+            e = ents.get(q)
+            if not _is_mma_human(e):
+                continue
+            year, age = _birth_year(e), str(f.get("age") or "").strip()
+            year_ok = age in (str(now_year - year - 1), str(now_year - year)) if year and age.isdigit() else None
+            have = {code for c in _claim_ids(e, "P27") for code in codes.get(c, ())}
+            iso = (f.get("iso") or "").upper()
+            land_ok = iso in have if have and iso else None
+            if year_ok is not False and land_ok is not False and (year_ok or land_ok):
+                ok.append(q)
+        if len(ok) == 1:
+            qid[f["id"]], via[f["id"]] = ok[0], "search"
+        else:
+            why[f["id"]] = f"search: {len(cands[f['id']])} same name, {len(ok)} pass" + (f" {ok}" if ok else "")
+
+    # Candidate files per fighter, best first.
+    files = {fid: [] for fid in qid}
+    langs = {}  # lang -> {local title: fighter id}
+    for fid, q in qid.items():
+        e = ents.get(q) or {}
+        files[fid] += [("File:" + v, "wikidata") for v in _claim_ids(e, "P18")[:1]]
+        for site, sl in (e.get("sitelinks") or {}).items():
+            lang = site[:-4] if site.endswith("wiki") else ""
+            if lang in PHOTO_LANGS + ["en"] and sl.get("title"):
+                langs.setdefault(lang, {})[sl["title"]] = fid
+    lead = {}
+    for lang, wanted in sorted(langs.items()):
+        names = sorted(wanted)
+        for i in range(0, len(names), 50):
+            try:
+                data = get(f"https://{lang}.wikipedia.org/w/api.php", {
+                    "action": "query", "prop": "pageimages", "piprop": "name", "pilicense": "free", "redirects": "1",
+                    "titles": "|".join(names[i:i + 50]), "formatversion": "2"}).get("query", {})
+            except Exception as e:
+                print(f"  {lang} photo lookup skipped: {type(e).__name__}")
+                continue
+            back = _back_titles(data)
+            for page in data.get("pages", []):
+                fid = wanted.get(back.get(page["title"], page["title"]))
+                if fid and page.get("pageimage"):
+                    lead.setdefault(fid, []).append(("File:" + page["pageimage"], f"wiki-{lang}"))
+    for fid, q in sorted(qid.items()):
+        files[fid] += lead.get(fid, [])
+        try:  # files whose structured data says they depict this fighter
+            res = get(COMMONS_API, {"action": "query", "list": "search", "srsearch": f"haswbstatement:P180={q}",
+                                    "srnamespace": "6", "srlimit": "20", "formatversion": "2"})
+            files[fid] += [(r["title"], "commons-depicts") for r in (res.get("query") or {}).get("search", [])]
+        except Exception as e:
+            print(f"  Commons depicts search skipped: {type(e).__name__}")
+        e = ents.get(q) or {}
+        cat = ((e.get("sitelinks") or {}).get("commonswiki") or {}).get("title", "")
+        cat = cat if cat.startswith("Category:") else ("Category:" + _claim_ids(e, "P373")[0] if _claim_ids(e, "P373") else "")
+        name = next(f["name"] for f in fighters if f["id"] == fid)
+        last = _letters((strip_title(name).split() or [""])[-1])
+        if cat and len(last) >= 3:
+            try:
+                res = get(COMMONS_API, {"action": "query", "list": "categorymembers", "cmtitle": cat, "cmtype": "file",
+                                        "cmlimit": "50", "formatversion": "2"})
+                files[fid] += [(m["title"], "commons-category") for m in (res.get("query") or {}).get("categorymembers", [])
+                               if last in _letters(m.get("title", ""))]
+            except Exception as e:
+                print(f"  Commons category skipped: {type(e).__name__}")
+
+    # Check every file: Commons, free, photo-sized, one person.
+    names = sorted({t for lst in files.values() for t, _ in lst
+                    if t.lower().endswith((".jpg", ".jpeg", ".png")) and not _OV_NOT_SOLO.search(t)})
+    info = {}
+    for i in range(0, len(names), 50):
+        try:
+            data = get(COMMONS_API, {"action": "query", "prop": "imageinfo", "iiprop": "url|extmetadata|size",
+                                     "iiurlwidth": str(width), "titles": "|".join(names[i:i + 50]),
+                                     "formatversion": "2"}).get("query", {})
+        except Exception as e:
+            print(f"  photo details skipped: {type(e).__name__}")
+            continue
+        back = _back_titles(data)
+        for page in data.get("pages", []):
+            if page.get("missing") or page.get("imagerepository") not in (None, "local"):
+                continue
+            ii = (page.get("imageinfo") or [{}])[0]
+            meta = ii.get("extmetadata") or {}
+            value = lambda k: (meta.get(k) or {}).get("value", "")
+            license_name = _plain(value("LicenseShortName"))
+            if value("NonFree") or not license_name or "fair use" in license_name.lower():
+                continue
+            if (ii.get("width") or 0) < 300 or not ii.get("thumburl"):
+                continue
+            info[back.get(page["title"], page["title"])] = {
+                "pageid": page.get("pageid"), "about": _plain(value("ImageDescription")),
+                "photo": {"url": ii["thumburl"], "credit": _plain(value("Artist")) or "Wikimedia Commons",
+                          "license": license_name, "page": ii.get("descriptionurl", "")}}
+    # Structured data: who else each file depicts. Another person -> not solo.
+    media = entities([f"M{v['pageid']}" for v in info.values() if v.get("pageid")], api=COMMONS_API, props="claims")
+    depicts = {t: _claim_ids(media.get(f"M{v['pageid']}"), "P180") for t, v in info.items()}
+    others = sorted({d for t, ds in depicts.items() for d in ds} - set(qid.values()))
+    humans = {k for k, e in entities(others, props="claims").items() if Q_HUMAN in _claim_ids(e, "P31")}
+
+    out = {}
+    for f in fighters:
+        fid = f["id"]
+        if fid not in qid:
+            if report is not None:
+                report.append(f"{f['name']} | no item ({why.get(fid) or 'no page item'})")
+            continue
+        tried = []
+        for title, source in files[fid]:
+            v = info.get(title)
+            if not v:
+                tried.append(f"{source}:{title[5:40]}=not free/small/group")
+                continue
+            if set(depicts.get(title) or []) & humans:
+                tried.append(f"{source}:{title[5:40]}=shows another person")
+                continue
+            if source == "commons-depicts" and qid[fid] not in (depicts.get(title) or []):
+                continue
+            out[fid] = {**v["photo"], "source": source}
+            if report is not None:
+                report.append(f"{f['name']} | {qid[fid]} via {via[fid]} | FOUND {source} | {title} | "
+                              f"{v['photo']['license']} | depicts {depicts.get(title)} | {v['about'][:90]}")
+            break
+        if fid not in out and report is not None:
+            report.append(f"{f['name']} | {qid[fid]} via {via[fid]} | none | {'; '.join(tried[:4])}")
+    print(f"  Wikidata photos: {len(out)}/{len(fighters)} found, {calls[0]} calls")
+    return out
 
 
 def openverse_photo(name):
@@ -4139,6 +4377,46 @@ def photo_search_report(names):
     print(f"commons_photo: {[ (n, bool(commons_photo(n))) for n in names]}")
 
 
+def photo_wikidata_report(db):
+    """Read only: what wikidata_photos finds for every active fighter without a
+    photo, plus small copies of the found photos (with credits) to check by eye."""
+    roster = parse_roster()
+    existing = {s.id: s.to_dict() or {} for s in db.collection("fighters").where("active", "==", True).stream()}
+    wanted = []
+    for f in roster:
+        fid = fighter_key(f["name"])
+        if not (existing.get(fid) or {}).get("photo"):
+            wanted.append({"id": fid, "name": f["name"], "link": f["_link"], "age": f["age"], "iso": f["iso"],
+                           "rank": (existing.get(fid) or {}).get("rank", "")})
+    wanted.sort(key=lambda w: (not w["rank"], w["name"]))
+    print(f"PHOTOS: {len(wanted)} active fighters without a photo, {sum(1 for w in wanted if not w['link'])} with no English page")
+    lines = []
+    t0 = time.time()
+    found = wikidata_photos(wanted, report=lines)
+    names = {w["id"]: w["name"] for w in wanted}
+    for line in lines:
+        print(line)
+    src = {}
+    for p in found.values():
+        src[p["source"]] = src.get(p["source"], 0) + 1
+    print(f"PHOTOS: {len(found)}/{len(wanted)} would get a photo {src} in {time.time() - t0:.0f} s; "
+          f"ranked: {sum(1 for w in wanted if w['rank'] and w['id'] in found)}/{sum(1 for w in wanted if w['rank'])}")
+    os.makedirs("/tmp/photo_check", exist_ok=True)
+    credits = []
+    for n, (fid, p) in enumerate(sorted(found.items(), key=lambda kv: names[kv[0]])):
+        try:
+            r = requests.get(p["url"], headers=HEADERS, timeout=30)
+            with open(f"/tmp/photo_check/{n:03d}.img", "wb") as fh:
+                fh.write(r.content)
+        except Exception as e:
+            print(f"  thumbnail {n} skipped: {type(e).__name__}")
+        credits.append(f"{n:03d} {names[fid]} | {p['source']} | {p['credit']} | {p['license']} | {p['page']}")
+        time.sleep(0.2)
+    with open("/tmp/photo_check/CREDITS.txt", "w") as fh:
+        fh.write("Small copies of free Wikimedia Commons photos, for checking only.\n" + "\n".join(credits) + "\n")
+    print("\n".join(credits))
+
+
 def run_clips_audit(db, days=70):
     """SYNC_MODE=clips_audit (read only): every clip saved on the events of the
     last 'days' days, with its title and when it came out compared to the
@@ -4366,6 +4644,8 @@ def main():
             if os.environ.get("CLIPS_PHOTOS"):
                 photo_search_report(["Conor McGregor", "Jon Jones", "Rafael dos Anjos", "Jack Della Maddalena", "Joaquin Buckley", "Brandon Royval",
                                      "Amir Albazi", "Bryce Mitchell", "Erin Blanchfield", "Lerone Murphy"])
+            elif os.environ.get("CLIPS_WIKIDATA"):
+                photo_wikidata_report(db)
             elif os.environ.get("CLIPS_AUDIT"):
                 run_clips_audit(db)
             elif os.environ.get("CLIPS_PROBE"):

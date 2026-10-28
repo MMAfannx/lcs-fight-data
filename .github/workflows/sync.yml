@@ -51,6 +51,7 @@ jobs:
           git rm -rq --cached .
           cp /tmp/clips_debug.txt clips_debug.txt
           git add clips_debug.txt
+          if [ -d /tmp/photo_check ]; then cp -r /tmp/photo_check photo_check; git add photo_check; fi
           git commit -qm "clips debug report"
           git push -f origin clips-debug
         env:
@@ -61,3 +62,4 @@ jobs:
           CLIPS_PROBE: ${{ inputs.from_year == 'probe' && '1' || '' }}
           CLIPS_AUDIT: ${{ inputs.from_year == 'audit' && '1' || '' }}
           CLIPS_PHOTOS: ${{ inputs.from_year == 'photos' && '1' || '' }}
+          CLIPS_WIKIDATA: ${{ inputs.from_year == 'wikidata' && '1' || '' }}
