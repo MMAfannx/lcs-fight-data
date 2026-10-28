@@ -1,0 +1,408 @@
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/google/cloud/firestore_v1/base_collection.py:317: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  return query.where(field_path, op_string, value)
+
+===== UFC 333: Volkanovski vs. Evloev 2026-10-24 18:00 UTC: 13/14 fights have a clip
+  Alexander Volkanovski vs Movsar Evloev (winner Alexander Volkanovski) end~21:17
+      youtube [UFC India] +11 min after end | alexander volkanovski hurts movsar evloev in round ufc ufc ufcindia | https://www.youtube.com/watch?v=V0dAecK3_kY
+      youtube [UFC Brasil] +13 min after end | alexander volkanovski defende novamente o cinturao do peso pena ufc | https://www.youtube.com/watch?v=l8niRKI9vTY
+      instagram [@ufceurope] -7 min after end | (not in index) | https://www.instagram.com/reel/De5EM6vD35C/
+      instagram [@ufcespanol] -2 min after end | (not in index) | https://www.instagram.com/reel/De5En5vSeYu/
+  Petr Yan vs Merab Dvalishvili (winner Petr Yan) end~20:38
+      youtube [UFC] -4 min after end | petryanandstillufc | https://www.youtube.com/watch?v=77IjyOVApZE
+      youtube [UFC Brasil] +8 min after end | petr yan vence merab dvalishvili por decisao unanime na trilogia pelo cinturao ufc | https://www.youtube.com/watch?v=ONBC8qGW_Iw
+      youtube [UFC India] +10 min after end | the trilogy goes the distance between petr yan and merab dvalishvili ufc ufc ufcindia | https://www.youtube.com/watch?v=SXxWJWXKvIo
+      instagram [@ufceurope] -5 min after end | (not in index) | https://www.instagram.com/reel/De4_9T1Exbq/
+      instagram [@ufcespanol] +10 min after end | (not in index) | https://www.instagram.com/reel/De5BnzWkQ8F/
+  Lone'er Kavanagh vs Ramazan Temirov (winner Lone'er Kavanagh) end~19:35
+      youtube [UFC] -3 min after end | lone er kavanagh oh my days ufc | https://www.youtube.com/watch?v=t2Sl_4wIuVQ
+      youtube [UFC India] +20 min after end | lone er kavanagh gets the ko in round at ufc ufc ufcindia inabudhabi | https://www.youtube.com/watch?v=IGyxZ0TBKpE
+      instagram [@ufceurope] -4 min after end | (not in index) | https://www.instagram.com/reel/De440kaCn2L/
+      instagram [@ufcespanol] +1 min after end | (not in index) | https://www.instagram.com/reel/De45c-0E9Gd/
+  Alexander Volkov vs Rizvan Kuniev (winner Alexander Volkov) end~19:07
+      youtube [UFC] +2 min after end | volkovgetsthedecisionwufc | https://www.youtube.com/watch?v=qM-tlEgGDuw
+  Aaron Pico vs Losene Keita (winner Aaron Pico) end~18:32
+      youtube [UFC] -2 min after end | firstroundfinishfromaaronpicoufc | https://www.youtube.com/watch?v=NRjkLP7s7Ww
+      youtube [UFC India] +82 min after end | aaron pico gets the stoppage in round at ufc ufc ufcindia inabudhabi | https://www.youtube.com/watch?v=qgb5h39H4Kg
+      instagram [@ufcespanol] +8 min after end | (not in index) | https://www.instagram.com/reel/De4y9F3kRm2/
+      instagram [@ufcindia] +22 min after end | (not in index) | https://www.instagram.com/reel/De40kUuDC98/
+  Dominick Reyes vs Azamat Murzakanov (winner Dominick Reyes) end~17:46
+      instagram [@ufceurope] +3 min after end | (not in index) | https://www.instagram.com/reel/De4tOHlFMkC/
+      instagram [@ufcindia] +11 min after end | (not in index) | https://www.instagram.com/reel/De4uFBnPeJR/
+  Abdul-Rakhman Yakhyaev vs Nikita Krylov (winner Abdul-Rakhman Yakhyaev) end~17:21
+      youtube [UFC] -1 min after end | yakhyaevdefeatskrylovufc | https://www.youtube.com/watch?v=kzAgfGT0NG4
+      instagram [@ufceurope] +0 min after end | (not in index) | https://www.instagram.com/reel/De4qBDeDVzF/
+      instagram [@ufcindia] +1 min after end | (not in index) | https://www.instagram.com/reel/De4qDtYgctr/
+  Abusupiyan Magomedov vs Cameron Rowston (winner Abusupiyan Magomedov) end~16:57
+      instagram [@ufceurope] -1 min after end | (not in index) | https://www.instagram.com/reel/De4nKbMCma0/
+      instagram [@ufcindia] +13 min after end | (not in index) | https://www.instagram.com/reel/De4o06-FLTc/
+  Grant Dawson vs Nurullo Aliev (winner Grant Dawson) end~16:42
+      youtube [UFC] +4 min after end | grantdawsontakesthewufc | https://www.youtube.com/watch?v=KI8zI5ielrM
+  Colby Thicknesse vs Asaf Chopurov (winner Colby Thicknesse) end unknown
+      youtube [UFC] 10-24 16:09 | wowthicknessewinsitufc | https://www.youtube.com/watch?v=a8da8tSb41U
+  Abubakar Vagaev vs Jacob Malkoun (winner Abubakar Vagaev) end~15:39
+      youtube [UFC] +2 min after end | great performance from abubakar vagaev ufc | https://www.youtube.com/watch?v=kCXeKzK4acw
+      instagram [@ufcmena] +83 min after end | (not in index) | https://www.instagram.com/reel/De4njSfoCzv/
+  Daniel Santos vs Bolaji Oki (winner Daniel Santos) end~15:14
+      youtube [UFC] -0 min after end | danielsantostakestheudufc | https://www.youtube.com/watch?v=zhWFBJ1wTvM
+  Kody Steele vs Noah Gugnon (winner Kody Steele) end~14:42
+      instagram [@ufceurope] -1 min after end | (not in index) | https://www.instagram.com/reel/De4XxGDgdIl/
+  Iasmin Lucindo vs Nicolle Caliari (winner Iasmin Lucindo) end unknown
+
+===== UFC Fight Night: Buckley vs. Malott 2026-10-18 02:00 UTC: 7/13 fights have a clip
+  Mike Malott vs Joaquin Buckley (winner Mike Malott) end~02:49
+      youtube [UFC] -2 min after end | buckley went to sleep ufcedmonton | https://www.youtube.com/watch?v=Fst9JRes37Y
+  Jasmine Jasudavicius vs Erin Blanchfield (winner Jasmine Jasudavicius) end~02:11
+      youtube [UFC] +5 min after end | jasminejasudaviciusgetsthewufcedmonton | https://www.youtube.com/watch?v=8MrzG38daJ0
+  Cristian Pérez vs Kyle Nelson (winner Cristian Pérez) end~01:39
+  Marc-André Barriault vs Kyle Daukaus (winner Marc-André Barriault) end~01:20
+  Timothy Cuamba vs Louis Jourdain (winner Timothy Cuamba) end~00:55
+      youtube [UFC] -2 min after end | timmycuambagetstherearnakedchokeufcedmonton | https://www.youtube.com/watch?v=7I7x2wcGay8
+  Mandel Nallo vs Nate Landwehr (winner Mandel Nallo) end~00:31
+  Tanner Boser vs Jhonata Diniz (winner Tanner Boser) end~00:01
+      youtube [UFC] +0 min after end | tanner boserrrrr ufcedmonton | https://www.youtube.com/watch?v=SZiWaqkJMo0
+  Nick Galanti vs Julien Leblanc (winner Nick Galanti) end~23:16
+  Joel Faglier vs Javad Mahjoub (winner Joel Faglier) end~23:08
+      youtube [UFC] -6 min after end | joelfagliermadehimquitufcedmonton | https://www.youtube.com/watch?v=r2ph6y80d3k
+  Katlyn Cerminara vs Mackenzie Stiller (winner Katlyn Cerminara) end~22:38
+      youtube [UFC] -0 min after end | afteralonglayoffkatlyncerminaragetsthefirstroundtkoufcedmonton | https://www.youtube.com/watch?v=VfZoJ_-lg2s
+  Steven Koslow vs Chad Anheliger (winner Steven Koslow) end~22:22
+  Chelsea Chandler vs Melissa Croden (winner Chelsea Chandler) end~21:53
+      youtube [UFC] +5 min after end | chelsea chandler heard it pop ufcedmonton | https://www.youtube.com/watch?v=l0joBWr68Q0
+  You Su-young vs Cody Chovancek (winner You Su-young) end unknown
+
+===== UFC Fight Night: Allen vs. Duncan 2026-10-11 02:00 UTC: 6/12 fights have a clip
+  Brendan Allen vs Christian Leroy Duncan (winner Brendan Allen) end~02:51
+      youtube [UFC] -2 min after end | allen was all in ufcvegas | https://www.youtube.com/watch?v=hRl3Z4OGOL0
+  Jai Herbert vs Matheus Camilo (winner Jai Herbert) end~02:01
+      youtube [UFC] +4 min after end | jai herbert still has it ufcvegas | https://www.youtube.com/watch?v=PKHjBUojvnU
+  Loopy Godínez vs Ketlen Souza (winner Loopy Godínez) end~01:31
+  Andre Fili vs Kai Kamaka III (winner Andre Fili) end~00:58
+  Otari Tanzilovi vs Malcolm Wellmaker (winner Otari Tanzilovi) end~00:30
+  Julius Walker vs Gerald Meerschaert (winner Julius Walker) end~23:54
+      youtube [UFC] +2 min after end | walkerfinishesmeerschaertufcvegas | https://www.youtube.com/watch?v=-ZcvDYCnxHY
+  Francisco Prado vs Ismael Bonfim (winner Francisco Prado) end~23:20
+      youtube [UFC] +6 min after end | weight difference doesn t matter to prado ufcvegas | https://www.youtube.com/watch?v=2TAeN-wF4Mk
+  Niko Price vs Leon Shahbazyan (winner Niko Price) end~22:53
+      youtube [UFC] -2 min after end | price is back ufcvegas | https://www.youtube.com/watch?v=I8ZwCMSmnFU
+  Brendson Ribeiro vs Felipe Franco (winner Brendson Ribeiro) end~22:35
+  Allen Frye Jr. vs RJ Harris (winner Allen Frye Jr.) end~22:11
+      youtube [UFC] +0 min after end | frye jr ufcvegas | https://www.youtube.com/watch?v=6cuiih6RGRk
+  Alice Pereira vs Darya Zheleznyakova (winner Alice Pereira) end~21:57
+  Melissa Gatto vs Ernesta Kareckaitė (winner Draw) end unknown
+
+===== UFC 332: Silva vs. Wang 2026-10-04 02:00 UTC: 10/14 fights have a clip
+  Natália Silva vs Wang Cong (winner Natália Silva) end~02:56
+      youtube [UFC] +0 min after end | natalia silva is the new champ ufc | https://www.youtube.com/watch?v=aAVuAiwGfwA
+      youtube [UFC India] +6 min after end | headkick connects for natalia silva ufc ufc ufcindia | https://www.youtube.com/watch?v=eLBgkCfScGQ
+  Payton Talbott vs Deiveson Figueiredo (winner Payton Talbott) end~02:02
+      youtube [UFC] -1 min after end | cold stone stunner from talbott ufc | https://www.youtube.com/watch?v=CY2c8aZMGDU
+      youtube [UFC India] +7 min after end | payton talbott dropped figueiredo in round ufc ufc ufcindia | https://www.youtube.com/watch?v=y0FhNdpRgrA
+  Esteban Ribovics vs King Green (winner Esteban Ribovics) end~01:35
+      youtube [UFC] -3 min after end | ribovics takes the crown from the king ufc | https://www.youtube.com/watch?v=0bvAJH1QUIc
+      youtube [UFC India] +12 min after end | esteban ribovics knocked down king green twice at ufc ufc ufcindia | https://www.youtube.com/watch?v=xlxk1Odkimk
+      youtube [ufcespanol] +254 min after end | ufc esteban ribovics noquea a king green | https://www.youtube.com/watch?v=NViXIn5Llwo
+  Roberto Soldić vs Khaos Williams (winner Roberto Soldić) end~01:13
+  Roman Kopylov vs Ateba Gautier (winner Roman Kopylov) end~00:38
+      youtube [UFC] -6 min after end | kopylov with the upset ufc | https://www.youtube.com/watch?v=cJh8sf7ax4A
+      youtube [UFC India] +17 min after end | roman kopylov stopped ateba gautier in round at ufc ufc ufcindia | https://www.youtube.com/watch?v=7RO8dNzS4Iw
+  Imanol Rodríguez vs Alden Coria (winner Imanol Rodríguez) end~23:49
+      youtube [UFC] -4 min after end | imanol is the real deal ufc | https://www.youtube.com/watch?v=XVkAVJt1nCw
+  Damian Pinas vs Andrey Pulyaev (winner Damian Pinas) end~23:14
+      youtube [UFC] -2 min after end | pinas power ufc | https://www.youtube.com/watch?v=72gW_Fk5ca0
+  Marcus McGhee vs Anthony Romero (winner Marcus McGhee) end~22:47
+      youtube [UFC] -2 min after end | so much power from mcghee ufc | https://www.youtube.com/watch?v=FSQ65PUXcbc
+  Anthony Wint vs Lucas Armand (winner Anthony Wint) end~22:22
+      youtube [UFC] -1 min after end | wint is an animal ufc | https://www.youtube.com/watch?v=zjieD0TEXCM
+      youtube [UFC India] +147 min after end | anthony wint gets the tko in round at ufc ufc ufcindia | https://www.youtube.com/watch?v=nAdZml-wYyY
+  Johnny Walker vs Mick Parkin (winner Johnny Walker) end~21:50
+      youtube [UFC] -2 min after end | johnny walker is a monster at hw ufc | https://www.youtube.com/watch?v=SuOeF84C3Jk
+      youtube [UFC India] +178 min after end | johnny walker wins via a round ko at ufc ufc ufcindia | https://www.youtube.com/watch?v=eoAourEQ5aY
+  Jacobe Smith vs Bruce Whitehead (winner Jacobe Smith) end~21:28
+      youtube [UFC India] +198 min after end | jacobe smith wins via a round finish at ufc ufc ufcindia | https://www.youtube.com/watch?v=CSCAnfX4NSE
+  Alexander Hernandez vs Rafael dos Anjos (winner Alexander Hernandez) end unknown
+  Ismail Naurdiev vs Marvin Vettori (winner Ismail Naurdiev) end unknown
+  Eric Nolan vs Court McGee (winner Eric Nolan) end unknown
+
+===== UFC Fight Night: Rosas Jr. vs. Barcelos 2026-09-27 02:00 UTC: 6/12 fights have a clip
+  Raul Rosas Jr. vs Raoni Barcelos (winner Raul Rosas Jr.) end~02:52
+      youtube [UFC India] +231 min after end | an abrupt finish at the end of round for raul rosas jr at ufcvegas ufc ufcindia | https://www.youtube.com/watch?v=XAEjupTLNGc
+  Ailín Pérez vs Norma Dumont (winner Ailín Pérez) end~01:55
+      youtube [UFC India] +286 min after end | ailin perez wins the bitter rivalry ufcvegas ufc ufcindia | https://www.youtube.com/watch?v=z3QiR4J0KI0
+  Luis Hernandez vs Sedriques Dumas (winner Luis Hernandez) end~01:19
+      youtube [UFC] +0 min after end | hernandez is a certified freak ufcvegas | https://www.youtube.com/watch?v=3SgmLpwYyhc
+  Ilimbek Akylbek uulu vs Mehemmedeli Osmanli (winner Ilimbek Akylbek uulu) end unknown
+  Valesca Machado vs Melissa Amaya (winner Valesca Machado) end unknown
+  Brady Hiestand vs Rinya Nakamura (winner Brady Hiestand) end~00:00
+      youtube [UFC] +3 min after end | after years off brady comes back strong ufcvegas | https://www.youtube.com/watch?v=K4vh-xs-ZN0
+  Rodolfo Vieira vs Robert Bryczek (winner Rodolfo Vieira) end unknown
+  Christian Edwards vs Rodolfo Bellato (winner Christian Edwards) end~23:07
+  Elves Brener vs Josiah Harrell (winner Elves Brener) end~22:34
+      youtube [UFC] +0 min after end | brenerknocksoutharrellufcvegas | https://www.youtube.com/watch?v=rgMaCftJ44M
+  Montel Jackson vs Ricky Simón (winner Montel Jackson) end~22:16
+      youtube [UFC] +5 min after end | montel jackson puts him out ufcvegas | https://www.youtube.com/watch?v=bIpC6rMBkFw
+  Alateng Heili vs John Castañeda (winner Alateng Heili) end unknown
+  Yazmin Jauregui vs Vanessa Demopoulos (winner Yazmin Jauregui) end unknown
+
+===== UFC 331: Van vs. Pantoja 2 2026-09-20 02:00 UTC: 7/12 fights have a clip
+  Joshua Van vs Alexandre Pantoja (winner Joshua Van) end~04:13
+      youtube [UFC] -7 min after end | joshua van defends his title against pantoja ufc | https://www.youtube.com/watch?v=xljmHLWhrRo
+      youtube [UFC India] +40 min after end | joshua van dropped alexandre pantoja cryptocom ufc ufc ufcindia | https://www.youtube.com/watch?v=aMAItRcKAIE
+  Arman Tsarukyan vs Maurício Ruffy (winner Arman Tsarukyan) end~03:15
+      youtube [UFC] -5 min after end | whataknockoutfromarmantsarukyanufc | https://www.youtube.com/watch?v=OTBSl7NIrrw
+      youtube [UFC India] +23 min after end | arman tsarukyan knocked mauricio ruffy out cold cryptocom ufc ufc ufcindia | https://www.youtube.com/watch?v=Qxo_PIinpz0
+  Patrício Pitbull vs Choi Doo-ho (winner Patrício Pitbull) end~02:41
+      youtube [UFC] -2 min after end | pitbullgetshisfirstufcfinishufc | https://www.youtube.com/watch?v=0NupGSH-R8g
+      youtube [UFC India] +15 min after end | patricio pitbull knocked out do hoo choi in round cryptocom ufc ufc ufcindia | https://www.youtube.com/watch?v=SWJigFoN5LI
+  Sean Sharaf vs Gable Steveson (winner Sean Sharaf) end~02:19
+      youtube [UFC] -8 min after end | omg omg omg shaun sharaf ufc | https://www.youtube.com/watch?v=qfRtuBbROBc
+      youtube [UFC India] +29 min after end | sean sharaf knocked out gable steveson in round cryptocom ufc ufc ufcindia | https://www.youtube.com/watch?v=AvJsKdeUuUs
+  Alonzo Menifield vs Iwo Baraniewski (winner Alonzo Menifield) end~01:59
+  Marlon Vera vs Charles Jourdain (winner Marlon Vera) end~01:05
+      youtube [UFC] -4 min after end | vera does it in style ufc | https://www.youtube.com/watch?v=ORGmY3_j7wI
+  Robelis Despaigne vs Tai Tuivasa (winner Robelis Despaigne) end unknown
+      youtube [UFC] 09-20 00:40 | despaigneedgesthesplitdecisionufc | https://www.youtube.com/watch?v=DgLuyqG-Dm0
+  Michael Aswell Jr. vs Yoo Joo-sang (winner Michael Aswell Jr.) end~00:05
+  Ryan Gandra vs Osman Diaz (winner Ryan Gandra) end~23:25
+  Edmen Shahbazyan vs Brunno Ferreira (winner Edmen Shahbazyan) end~23:05
+      youtube [UFC] -3 min after end | edmen shahbazyan ladies and gentlemen ufc | https://www.youtube.com/watch?v=FVHUU_q4K-Q
+  Casey O'Neill vs Eduarda Moura (winner Casey O'Neill) end~22:16
+  Joanderson Brito vs Giga Chikadze (winner Joanderson Brito) end~22:00
+
+===== UFC Fight Night: Silva vs. Delgado 2026-09-13 02:00 UTC: 6/13 fights have a clip
+  Jean Silva vs Jose Miguel Delgado (winner Jean Silva) end~00:37
+      youtube [UFC] +6 min after end | silva does it again nocheufc | https://www.youtube.com/watch?v=Rm_RGfRLzO8
+      youtube [ufcespanol] +130 min after end | nocheufc jean silva somete a jose miguel delgado | https://www.youtube.com/watch?v=cmOF_b7SSU0
+      youtube [UFC India] +16 min after end | jean silva gets the submission victory in round nocheufc ufc ufcindia | https://www.youtube.com/watch?v=fIplLRBo6ho
+  Brandon Moreno vs Joseph Morales (winner Brandon Moreno) end~23:55
+      youtube [UFC] +3 min after end | brandonmorenogetsthejobdonenocheufc | https://www.youtube.com/watch?v=u0obe59fAtA
+      youtube [UFC India] +4 min after end | brandon moreno wins in his first appearance at nocheufc ufc ufcindia | https://www.youtube.com/watch?v=-YrlEtd1S4E
+  Tommy McMillen vs Marwan Rahiki (winner Tommy McMillen) end~23:18
+      youtube [UFC] -3 min after end | tommy gun bringing the fire nocheufc | https://www.youtube.com/watch?v=tWW7csCtSjM
+      youtube [UFC India] +13 min after end | tommy mcmillen knocked down marwan rahiki in round nocheufc ufc ufcindia | https://www.youtube.com/watch?v=NImvoSEelSQ
+  Alexa Grasso vs Manon Fiorot (winner Alexa Grasso) end~22:44
+      youtube [UFC] +3 min after end | hey alexa can i get another w nocheufc | https://www.youtube.com/watch?v=RNaejUnaNuI
+      youtube [UFC India] +41 min after end | alexa grasso dropped manon fiorot nocheufc ufc ufcindia | https://www.youtube.com/watch?v=Vag9xF_ur5o
+      youtube [ufcespanol] +241 min after end | nocheufc alexa grasso derrota a manon fiorot | https://www.youtube.com/watch?v=OavxB84ebaw
+  Curtis Blaydes vs Waldo Cortes-Acosta (winner Curtis Blaydes) end unknown
+      youtube [UFC] 09-12 22:14 | blaydes back in the win column nocheufc | https://www.youtube.com/watch?v=9ekLqlZQS-s
+  David Martínez vs Dan Ige (winner David Martínez) end~21:41
+      youtube [UFC] +7 min after end | martinezwinsthedecisionnocheufc | https://www.youtube.com/watch?v=bTArKs-ahx8
+      youtube [UFC India] +4 min after end | david martinez with some acrobatics during the fight nocheufc ufc ufcindia | https://www.youtube.com/watch?v=jR1sUQN5hWo
+  Tim Elliott vs Édgar Cháirez (winner Tim Elliott) end unknown
+  Ignacio Bahamondes vs Muslim Salikhov (winner Ignacio Bahamondes) end unknown
+  Yousri Belgaroui vs Djorden Santos (winner Yousri Belgaroui) end unknown
+  Thomas Gantt vs Drakkar Klose (winner Thomas Gantt) end unknown
+  Rong Zhu vs Rafa García (winner Rong Zhu) end unknown
+  Sean King III vs Jessie Rosas (winner Sean King III) end unknown
+  Regina Tarín vs JJ Aldrich (winner Regina Tarín) end unknown
+
+===== UFC Fight Night: Hooker vs. Parnasse 2026-09-05 19:00 UTC: 8/14 fights have a clip
+  Salahdine Parnasse vs Dan Hooker (winner Salahdine Parnasse) end~21:57
+      youtube [UFC] -3 min after end | parnasseknocksoutdanhookerufcparis | https://www.youtube.com/watch?v=NheYo7M6W18
+      youtube [UFC India] +18 min after end | salahdine parnasse stopped dan hooker in paris ufcparis ufc ufcindia | https://www.youtube.com/watch?v=jhI4RDorhQo
+  Axel Sola vs Farès Ziam (winner Axel Sola) end~21:26
+      youtube [UFC] +5 min after end | axel sola oh myyyyyyy ufcparis | https://www.youtube.com/watch?v=GrGigJz9goQ
+  Michael Page vs Nursulton Ruziboev (winner Michael Page) end unknown
+  Daniil Donchenko vs Punahele Soriano (winner Daniil Donchenko) end~20:39
+  Kurtis Campbell vs Trevor Peek (winner Kurtis Campbell) end~20:05
+      youtube [UFC India] +79 min after end | kurtis campbell gets the submission in round at ufcparis ufc ufcindia | https://www.youtube.com/watch?v=sl8aH8rNlbQ
+  Losene Keita vs Muhammad Naimov (winner Losene Keita) end~19:30
+  Felipe Lima vs Morgan Charrière (winner Felipe Lima) end~19:04
+  Mário Pinto vs Ryan Spann (winner Mário Pinto) end~18:36
+      youtube [UFC] +7 min after end | mariopintodefeatsryanspannufcparis | https://www.youtube.com/watch?v=5-sngwOvkSQ
+  Modestas Bukauskas vs Oumar Sy (winner Modestas Bukauskas) end~18:20
+      youtube [UFC] -3 min after end | bukauskasgetsthejobdoneufcparis | https://www.youtube.com/watch?v=r6CeRIKLEEY
+      youtube [UFC India] +38 min after end | modestas bukauskas stops oumar sy in round at ufcparis ufc ufcindia | https://www.youtube.com/watch?v=r5i_OZNj6M4
+  Pavel Andrusca vs Nathaniel Wood (winner Pavel Andrusca) end unknown
+  Fabià Sintes vs Michael Aljarouj (winner Fabià Sintes) end unknown
+  Nora Cornolle vs Klaudia Syguła (winner Nora Cornolle) end~17:10
+      youtube [UFC Québec] +9 min after end | ufc paris nora cornolle convainc les juges ufcparis | https://www.youtube.com/watch?v=zqHsFCmvrKU
+  Matthieu Letho Duclos vs Luis Felipe Dias (winner Matthieu Letho Duclos) end~16:41
+      youtube [UFC] +5 min after end | that was quick matthieu letho duclos put him down ufcparis | https://www.youtube.com/watch?v=thJ5mpb1MJM
+      youtube [UFC Québec] +12 min after end | ufc paris matthieu letho duclos triomphe ufcparis | https://www.youtube.com/watch?v=q5WsXGMbPkA
+  Delphine Benouaich vs Sofia Montenegro (winner Delphine Benouaich) end~16:21
+      youtube [UFC Québec] +15 min after end | ufc paris debuts victorieux pour delphine benouaich ufcparis | https://www.youtube.com/watch?v=MEb3eqvBpFU
+
+===== UFC Fight Night: Nurmagomedov vs. Song 2026-08-29 12:00 UTC: 8/13 fights have a clip
+  Song Yadong vs Umar Nurmagomedov (winner Song Yadong) end~13:02
+      youtube [UFC India] +39 min after end | song yadong knocked out usman nurmagomedov in the main event of ufcshanghai ufc ufcindia | https://www.youtube.com/watch?v=Ym5b8iFqyro
+  Denise Gomes vs Yan Xiaonan (winner Denise Gomes) end~12:22
+      youtube [UFC Brasil] +1 min after end | denisegomesaplicaumnocauteabsurdonoufcxangai | https://www.youtube.com/watch?v=g1a0ZWMjhTA
+  Kai Asakura vs Aori Qileng (winner Kai Asakura) end~11:55
+      youtube [UFC] -2 min after end | kaiasakurawithyetanotherfinishufcshanghai | https://www.youtube.com/watch?v=fzIeYovL4_0
+  Su Mudaerji vs Alex Perez (winner Su Mudaerji) end~11:34
+  Liu Ce vs Levi Rodrigues Jr. (winner Liu Ce) end~11:01
+  Bilal Hasan vs Nilson Rojas (winner Bilal Hasan) end~10:36
+      youtube [UFC] +9 min after end | bilal hasan is brilliant ufcshanghai | https://www.youtube.com/watch?v=PWlCANq2Quk
+  André Lima vs Namsrai Batbayar (winner André Lima) end~10:01
+      youtube [UFC] -2 min after end | andre lima with a sub ufcshanghai | https://www.youtube.com/watch?v=IhEph-hehbs
+  Rei Tsuruya vs Kevin Borjas (winner Rei Tsuruya) end~09:24
+      youtube [UFC] +0 min after end | rei tsuruya is him ufcshanghai | https://www.youtube.com/watch?v=u1-sujj-iRQ
+  Sean Woodson vs Jack Jenkins (winner Sean Woodson) end~09:06
+  Francesco Nuzzi vs Xiao Long (winner Francesco Nuzzi) end~08:28
+      youtube [UFC] -1 min after end | nuzzi went nuts ufcshanghai | https://www.youtube.com/watch?v=hNPC8QUprVM
+  Hector Santiago vs Lawrence Lui (winner Hector Santiago) end~08:16
+      youtube [UFC Brasil] +7 min after end | hectorsantiagoestreiacomvitoriapornocautenoufcxangai | https://www.youtube.com/watch?v=GIf8qEDvPFk
+  Julia Polastri vs Xiong Jingnan (winner Julia Polastri) end~07:50
+  Cameron Nelson vs Ding Meng (winner Cameron Nelson) end~07:36
+
+===== UFC Fight Night: Hernandez vs. Rodrigues 2026-08-23 02:00 UTC: 7/13 fights have a clip
+  Gregory Rodrigues vs Anthony Hernandez (winner Gregory Rodrigues) end~03:03
+      youtube [UFC] +8 min after end | gregory rodrigues defeated anthony hernandez ufcsacramento | https://www.youtube.com/watch?v=2tqNCpfaVAM
+      youtube [ufcespanol] +2 min after end | nocheufcpeleagratisgarciavshernandez | https://www.youtube.com/watch?v=n3TSfUrKZ0E
+  Vitor Petrino vs Serghei Spivac (winner Vitor Petrino) end~02:07
+      youtube [UFC] +7 min after end | vitorpetrinogettheunanimousdecisionwinufcsacramento | https://www.youtube.com/watch?v=g1-QyB-8hnM
+  Reinier de Ridder vs Roman Dolidze (winner Reinier de Ridder) end~01:33
+  MarQuel Mederos vs Mason Jones (winner MarQuel Mederos) end~01:14
+      youtube [UFC] -0 min after end | marquel mederos with the nasty comeback ufcsacramento | https://www.youtube.com/watch?v=3qJjL50qPKg
+      youtube [UFC India] +319 min after end | marquel mederos gets the standing tko in round at ufcsacramento ufc ufcindia | https://www.youtube.com/watch?v=hbqsxSDmwu8
+  Carli Judice vs Jeisla Chaves (winner Carli Judice) end~00:47
+  Anthony Wint vs Terrance Chatman (winner Anthony Wint) end~00:29
+  Jamall Emmers vs Lerryan Douglas (winner Jamall Emmers) end~23:46
+  Shamil Gaziev vs Kennedy Nzechukwu (winner Shamil Gaziev) end~23:20
+      youtube [UFC] -3 min after end | shamil gazievvvvvvv ufcsacramento | https://www.youtube.com/watch?v=1pb3IwlY7CI
+  Chris Padilla vs Nasrat Haqparast (winner Chris Padilla) end unknown
+      youtube [UFC India] 08-23 06:14 | chris padilla submitted nasrat haqparast at of round ufcsacramento ufc ufcindia | https://www.youtube.com/watch?v=sQIug3yDfWM
+  Márcio Barbosa vs Ryan Kuse (winner Márcio Barbosa) end~22:33
+      youtube [UFC] -4 min after end | marcio barbosa hits so hard ufcsacramento | https://www.youtube.com/watch?v=TakOur2Te50
+  Stanley Dorsainvil vs Gauge Young (winner Stanley Dorsainvil) end~22:16
+  Jackson McVey vs Wesley Schultz (winner Jackson McVey) end~21:44
+  Shanelle Dyer vs Elise Reed (winner Shanelle Dyer) end~21:31
+      youtube [UFC] +5 min after end | shanelle dyer starts it off hot ufcsacramento | https://www.youtube.com/watch?v=m1IvGEybeJ8
+
+TOTAL events last 70 days: 78/130 finished fights have a clip, 75 with YouTube
+
+===== MISSING: index posts naming a fighter of a fight without a clip
+-- UFC 333: Volkanovski vs. Evloev
+  Iasmin Lucindo vs Nicolle Caliari (winner Iasmin Lucindo): 2 post(s)
+      instagram [@ufc_brasil] 10-24 14:06 text_ok=False | temduelobrasileiroabrindooufciasminlucindoenicaliarientramemacaoagoranooctogonoquemvailevaramelhoraovivosoment
+      youtube [UFC] 10-24 14:30 text_ok=True | iasmin lucindo ufc
+-- UFC Fight Night: Buckley vs. Malott
+  Cristian Pérez vs Kyle Nelson (winner Cristian Pérez): 4 post(s)
+      youtube [UFC Brasil] 10-18 01:22 text_ok=True | marcandrebarriaultviraparacimadekyledaukausevencepornocautetecniconoufcedmonton
+      youtube [UFC] 10-18 01:43 text_ok=False | cristian perez octagon interview ufc edmonton
+      youtube [UFC Brasil] 10-18 01:44 text_ok=True | cristianperezestreiacomumnocautefulminantenoufcedmonton
+      youtube [ufcespanol] 10-18 01:52 text_ok=False | ufcedmonton cristian puas perez entrevista en el octagono
+  Marc-André Barriault vs Kyle Daukaus (winner Marc-André Barriault): 3 post(s)
+      youtube [UFC Brasil] 10-18 01:22 text_ok=True | marcandrebarriaultviraparacimadekyledaukausevencepornocautetecniconoufcedmonton
+      youtube [UFC] 10-18 01:24 text_ok=False | marc andre barriault octagon interview ufc edmonton
+      youtube [ufcespanol] 10-18 01:29 text_ok=False | ufcedmonton marc andre barriault entrevista en el octagono
+  Mandel Nallo vs Nate Landwehr (winner Mandel Nallo): 5 post(s)
+      youtube [UFC] 10-18 00:28 text_ok=True | nallogetsthefinishbylegkickufcedmonton
+      youtube [UFC] 10-18 00:35 text_ok=False | mandel nallo octagon interview ufc edmonton
+      youtube [UFC Brasil] 10-18 00:36 text_ok=True | mandelnalloabreocardprincipalcomnocautesobrenatelandwehrufcedmonton
+      youtube [ufcespanol] 10-18 00:40 text_ok=False | ufcedmonton mandel nallo entrevista en el octagono
+      youtube [UFC] 10-18 02:35 text_ok=True | nate diaz in the house ufcedmonton
+  Nick Galanti vs Julien Leblanc (winner Nick Galanti): 3 post(s)
+      youtube [UFC Brasil] 10-17 23:18 text_ok=True | nickgalantifinalizajulienleblancnoufcedmonton
+      youtube [UFC] 10-17 23:20 text_ok=False | nick galanti octagon interview ufc edmonton
+      youtube [ufcespanol] 10-17 23:46 text_ok=False | ufcedmonton nick galanti entrevista en el octagono
+  Steven Koslow vs Chad Anheliger (winner Steven Koslow): 2 post(s)
+      youtube [UFC] 10-17 22:26 text_ok=False | steven koslow octagon interview ufc edmonton
+      youtube [UFC Brasil] 10-17 23:05 text_ok=True | stevenkoslowfinalizachadanheligercomummataleaonoufcedmonton
+  You Su-young vs Cody Chovancek (winner You Su-young): 1 post(s)
+      youtube [UFC Brasil] 10-17 21:48 text_ok=True | suyoungyoufinalizacomumakimuranalutadeaberturadoufcedmonton
+-- UFC Fight Night: Allen vs. Duncan
+  Loopy Godínez vs Ketlen Souza (winner Loopy Godínez): 3 post(s)
+      youtube [UFC] 10-11 01:35 text_ok=True | loopytakesthewinufcvegas
+      youtube [UFC] 10-11 01:35 text_ok=False | loopy godinez octagon interview ufc vegas
+      youtube [ufcespanol] 10-11 01:49 text_ok=False | ufcvegas loopy godinez entrevista en el octagono
+  Andre Fili vs Kai Kamaka III (winner Andre Fili): 3 post(s)
+      youtube [UFC] 10-11 00:57 text_ok=True | filiwithaninsanekoufcvegas
+      youtube [UFC Brasil] 10-11 01:00 text_ok=True | vitoriadeandrefilisobrekaikamakapornocautenoroundufcvegas
+      youtube [UFC] 10-11 01:02 text_ok=False | andre fili octagon interview ufc vegas
+  Otari Tanzilovi vs Malcolm Wellmaker (winner Otari Tanzilovi): 4 post(s)
+      youtube [UFC] 10-11 00:34 text_ok=False | otari tanzilovi octagon interview ufc vegas
+      youtube [UFC Brasil] 10-11 00:37 text_ok=True | vitoriadeotaritanzilovisobremalcolmwellmakerpornocautenoroundufcvegas
+      youtube [ufcespanol] 10-11 00:43 text_ok=False | ufcvegas otari tanzilovi entrevista en el octagono
+      youtube [UFC] 10-11 00:56 text_ok=False | merabreactstotanzilovikoufcvegas
+  Brendson Ribeiro vs Felipe Franco (winner Brendson Ribeiro): 6 post(s)
+      youtube [UFC Brasil] 10-10 22:30 text_ok=True | vitoriadebrendsonribeirosobrefelipefrancoporfinalizacaonoroundufcvegas
+      youtube [UFC] 10-10 22:39 text_ok=False | brendson ribeiro octagon interview ufc vegas
+      youtube [UFC Brasil] 10-10 22:41 text_ok=False | entrevista de octogono com brendson ribeiro ufc vegas
+      youtube [ufcespanol] 10-10 23:34 text_ok=False | ufcvegas brendson ribeiro entrevista en el octagono
+      youtube [UFC Brasil] 10-11 00:29 text_ok=False | vejaorecadodebrendsonribeiroaposavitoriaporfinalizacaonoufcvegas
+      youtube [UFC Brasil] 10-11 19:00 text_ok=True | obrendsonribeirocontouosegredoparaterfinalizadocomumaguilhotinajustanoufcvegas
+  Alice Pereira vs Darya Zheleznyakova (winner Alice Pereira): 8 post(s)
+      youtube [UFC Brasil] 10-10 21:56 text_ok=True | vejaacotoveladaquedefiniuonocautedealicepereiraporinterrupcaomedicaufcvegas
+      youtube [UFC] 10-10 22:01 text_ok=False | alice pereira octagon interview ufc vegas
+      youtube [UFC Brasil] 10-10 22:04 text_ok=False | entrevista de octogono com alice pereira ufc vegas
+      youtube [ufcespanol] 10-10 22:14 text_ok=False | ufcvegas alice pereira entrevista en el octagono
+      youtube [UFC Brasil] 10-11 14:00 text_ok=False | a alice pereira comentou a estrategia para o ufcvegas e ja esta de olho no proximo compromisso
+      youtube [ufcespanol] 10-11 17:57 text_ok=True | ufcvegas alice pereira a mantener la division viva
+      youtube [UFC Brasil] 10-12 21:00 text_ok=False | veja a encarada de aline pereira irma de alex poatan na pesagem do contender series dwcs
+      youtube [UFC Brasil] 10-13 00:00 text_ok=False | alex poatan fala sobre a participacao de sua irma aline pereira no contender series dwcs
+  Melissa Gatto vs Ernesta Kareckaitė (winner Draw): 0 post(s)
+-- UFC 332: Silva vs. Wang
+  Roberto Soldić vs Khaos Williams (winner Roberto Soldić): 3 post(s)
+      youtube [UFC] 10-04 01:17 text_ok=False | roberto soldic octagon interview ufc
+      youtube [ufcespanol] 10-04 01:26 text_ok=False | ufc roberto soldic entrevista en el octagono
+      youtube [ESPN MMA] 10-04 04:03 text_ok=True | robertosoldicvskhaoswilliamshighlightsufcespnmma
+  Alexander Hernandez vs Rafael dos Anjos (winner Alexander Hernandez): 5 post(s)
+      youtube [UFC] 10-03 21:10 text_ok=True | hernandez with the comeback woah ufc
+      youtube [UFC] 10-03 21:18 text_ok=True | hernandezgetsthewinoverrdaufc
+      youtube [UFC] 10-03 21:18 text_ok=False | alexander hernandez octagon interview ufc
+      youtube [ufcespanol] 10-04 05:23 text_ok=False | ufcalexanderhernandezhablastrasvictoriaportko
+      youtube [ufcespanol] 10-06 01:47 text_ok=True | dwcs voy a mostrar todo el trabajo que he hecho alexander chavez
+  Ismail Naurdiev vs Marvin Vettori (winner Ismail Naurdiev): 2 post(s)
+      youtube [UFC] 10-03 20:46 text_ok=True | marvin is pressing him ufc
+      youtube [UFC] 10-03 20:56 text_ok=True | ismailnaurdievgetsthedecisionufc
+  Eric Nolan vs Court McGee (winner Eric Nolan): 6 post(s)
+      youtube [UFC] 10-03 20:25 text_ok=True | nolanknocksoutmcgeeufc
+      youtube [UFC] 10-03 20:28 text_ok=True | whatakobynolanufc
+      youtube [UFC] 10-03 20:29 text_ok=True | we will miss court mcgee ufc
+      youtube [UFC Brasil] 10-03 20:33 text_ok=True | vitoriadeericnolansobrecourtmcgeepornocautetecniconoroundufc
+      youtube [UFC] 10-03 20:35 text_ok=False | eric nolan octagon interview ufc
+      youtube [UFC] 10-03 20:39 text_ok=True | court mcgee retires from the ufc ufc
+-- UFC Fight Night: Rosas Jr. vs. Barcelos
+  Ilimbek Akylbek uulu vs Mehemmedeli Osmanli (winner Ilimbek Akylbek uulu): 0 post(s)
+  Valesca Machado vs Melissa Amaya (winner Valesca Machado): 1 post(s)
+      youtube [UFC Brasil] 09-27 00:35 text_ok=True | tinablacknocauteiamelissaamayaeecampeadotufufcvegas
+  Rodolfo Vieira vs Robert Bryczek (winner Rodolfo Vieira): 3 post(s)
+      youtube [UFC Brasil] 09-26 23:50 text_ok=False | confira o recado do rodolfo vieira apos a vitoria no ufcvegas
+      youtube [UFC Brasil] 09-27 04:18 text_ok=True | rodolfo vieira me senti muito mais calmo e consciente ufc vegas
+      youtube [UFC Brasil] 09-27 12:00 text_ok=True | rodolfo vieira estou muito feliz com essa vitoria ufcvegas
+  Christian Edwards vs Rodolfo Bellato (winner Christian Edwards): 4 post(s)
+      youtube [UFC] 09-26 23:11 text_ok=False | christian edwards octagon interview ufc vegas
+      youtube [UFC Brasil] 09-26 23:50 text_ok=False | confira o recado do rodolfo vieira apos a vitoria no ufcvegas
+      youtube [UFC Brasil] 09-27 04:18 text_ok=True | rodolfo vieira me senti muito mais calmo e consciente ufc vegas
+      youtube [UFC Brasil] 09-27 12:00 text_ok=True | rodolfo vieira estou muito feliz com essa vitoria ufcvegas
+  Alateng Heili vs John Castañeda (winner Alateng Heili): 4 post(s)
+      youtube [UFC Brasil] 09-27 04:14 text_ok=True | elves brener michael johnson seria um bom nome para enfrentar ufc vegas
+      youtube [UFC Brasil] 09-29 19:09 text_ok=False | johnny walker estreia no peso pesado de olho no top ufc
+      youtube [UFC Brasil] 09-30 13:00 text_ok=True | todososnocautesefinalizacoesdejohnnywalkerufc
+      youtube [UFC Brasil] 09-30 15:00 text_ok=True | johnnywalkerxzhangmingyanglutacompletaufc
+  Yazmin Jauregui vs Vanessa Demopoulos (winner Yazmin Jauregui): 6 post(s)
+      youtube [UFC Brasil] 09-26 21:22 text_ok=True | yazminjaureguiabreoufcvegascomumnocautaco
+      youtube [UFC] 09-26 21:25 text_ok=False | yazmin jauregui octagon interview ufc vegas
+      youtube [ufcespanol] 09-26 21:31 text_ok=True | ufcvegas yazmin jauregui noquea brutal a round
+      youtube [UFC Brasil] 09-26 21:33 text_ok=True | quenocauteabsurdodayazminjaureguiufcvegas
+      youtube [ufcespanol] 09-27 03:26 text_ok=True | ufcvegasyazminjaureguiregresaconko
+      youtube [ufcespanol] 09-30 22:47 text_ok=True | ufcvegas yazmin jauregui responde a la prensa
+YT index UFC Québec: 521 rows, 0 with no readable title
+YT index UFC India: 3100 rows, 0 with no readable title
+YT index ESPN MMA: 1370 rows, 0 with no readable title
+YT index UFC FIGHT PASS: 2995 rows, 0 with no readable title
+YT index UFC Eurasia: 5714 rows, 1035 with no readable title
+YT index ufcespanol: 9479 rows, 0 with no readable title
+YT index UFC BJJ: 505 rows, 0 with no readable title
+YT index Combate: 31 rows, 0 with no readable title
+YT index ESPN: 3 rows, 0 with no readable title
+YT index CBS Sports: 7 rows, 0 with no readable title
+YT index UFC Brasil: 16008 rows, 2 with no readable title
+YT index TNT Sports: 0 rows, 0 with no readable title
+YT index UFC Japan: 1223 rows, 7 with no readable title
+YT index Paramount Plus: 1 rows, 0 with no readable title
+YT index UFC: 20005 rows, 26 with no readable title
+IG test read FAILED: RuntimeError HTTP 400 200/ API access blocked.
+IG index @espnmma: 0 rows, 1970-01-01 .. 1970-01-01, complete=False v=3
+IG index @ufc: 32 rows, 2026-10-24 .. 2026-10-26, complete=True v=None
+IG index @ufc_brasil: 25 rows, 2026-10-23 .. 2026-10-26, complete=True v=None
+IG index @ufcespanol: 0 rows, 1970-01-01 .. 1970-01-01, complete=False v=3
+IG index @ufceurope: 0 rows, 1970-01-01 .. 1970-01-01, complete=False v=3
+IG index @ufcfightpass: 0 rows, 1970-01-01 .. 1970-01-01, complete=False v=3
+IG index @ufcindia: 0 rows, 1970-01-01 .. 1970-01-01, complete=False v=3
+IG index @ufcmena: 0 rows, 1970-01-01 .. 1970-01-01, complete=False v=3
+TOTAL fighters' last-5 rows: 1264/2588 have a clip
+TOTAL active fighters with a photo: 184
+Done.
