@@ -4198,6 +4198,12 @@ def run_clips_audit(db, days=70):
             _, rows = yt_load_index(db, snap.id)
             empty = sum(1 for r in rows if not r.split("|", 2)[2].strip())
             print(f"YT index {meta.get('title')}: {len(rows)} rows, {empty} with no readable title")
+    try:  # can we read Instagram right now?
+        bd = _ig_page("ufceurope")
+        print(f"IG test read: ok, {len((bd.get('media') or {}).get('data') or [])} posts, "
+              f"paging keys {list(((bd.get('media') or {}).get('paging') or {}).keys())}")
+    except Exception as e:
+        print(f"IG test read FAILED: {type(e).__name__} {e}")
     for snap in db.collection("igIndex").stream():
         meta = snap.to_dict() or {}
         if "chunks" in meta:
