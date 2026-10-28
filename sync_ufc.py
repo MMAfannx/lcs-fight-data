@@ -3509,8 +3509,8 @@ IG_INDEX_V = 3  # raise when the stored caption format changes: each account is 
 # Their clips are removed.
 IG_BLOCKED = {"@ufc_brasil", "@ufc"}
 IG_MIN_FOLLOWERS = 300_000
-IG_PAGES_PER_RUN = 40  # 50 posts per page, per account
-IG_CALLS_PER_RUN = 120  # Meta allows ~200 calls an hour; leave room for live clips
+IG_PAGES_PER_RUN = 4  # per account per run (history fills slowly: Meta blocked the app on Oct 27 after heavy reading)
+IG_CALLS_PER_RUN = 25  # well under Meta's limits; live clips need some too
 IG_CHUNK = 1500
 
 
