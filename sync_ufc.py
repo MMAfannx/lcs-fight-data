@@ -3528,7 +3528,8 @@ def _ig_page(username, after=None):
         err = (data.get("error") or {}) if isinstance(data, dict) else {}
         if err.get("code") in (4, 17, 32, 613) or err.get("error_subcode") == 2207051:
             raise _IGLimit()
-        raise RuntimeError(f"HTTP {r.status_code} {err.get('code', '')}")  # never the URL: it holds the token
+        msg = re.sub(r"[A-Za-z0-9]{40,}", "…", str(err.get("message", ""))[:160])  # never a token
+        raise RuntimeError(f"HTTP {r.status_code} {err.get('code', '')}/{err.get('error_subcode', '')} {msg}")  # never the URL: it holds the token
     return data.get("business_discovery") or {}
 
 
