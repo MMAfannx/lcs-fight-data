@@ -1062,10 +1062,16 @@ def openverse_photo(name):
     return None
 
 
+_card_links = {}  # fighter id -> (name, Wikipedia title) for everyone on the cards read this run
+
+
 def add_arabic(fights):
     """Adds Arabic names, Arab flags and permanent fighter IDs to each fight."""
     info = fighter_info([f.get("_linkA") for f in fights] + [f.get("_linkB") for f in fights])
     for f in fights:
+        for side in ("A", "B"):
+            if f.get(f"_link{side}") and f.get(f"fighter{side}"):
+                _card_links[fighter_key(f[f"fighter{side}"])] = (f[f"fighter{side}"], f[f"_link{side}"])
         a = info.get(f.pop("_linkA", None) or "", {})
         b = info.get(f.pop("_linkB", None) or "", {})
         f["fighterAAr"], f["fighterBAr"] = a.get("ar", ""), b.get("ar", "")
@@ -2040,7 +2046,7 @@ def build_fighter_index(db):
     rows = []
     for snap in db.collection("fighters").stream():
         d = snap.to_dict() or {}
-        if not (d.get("active") or d.get("legend")) or not d.get("name"):
+        if not (d.get("active") or d.get("legend") or d.get("card")) or not d.get("name"):
             continue
         photo = d.get("photo") or {}
         row = {"id": snap.id, "name": d["name"]}
@@ -2059,6 +2065,60 @@ def build_fighter_index(db):
     rows.sort(key=lambda r: r["name"])
     db.collection("meta").document("fighterIndex").set({"fighters": rows, "updated": datetime.now(timezone.utc)})
     print(f"Fighter search index: {len(rows)} fighters")
+
+
+def ensure_card_profiles(db, limit=25):
+    """Every fighter on a card gets a profile, so tapping or comparing them
+    works: returning fighters (Amanda Nunes) and new signings aren't on the
+    roster page yet. Built like a legend's profile, marked card: true (not
+    active, not a legend). Ids already checked are remembered in
+    meta/cardProfiles, so this costs one read per run."""
+    if db is None or not _card_links:
+        return
+    ref = db.collection("meta").document("cardProfiles")
+    snap = ref.get()
+    done = set((snap.to_dict() or {}).get("ids") or []) if snap.exists else set()
+    todo = []
+    for fid, (name, link) in sorted(_card_links.items()):
+        if fid in done:
+            continue
+        if db.collection("fighters").document(fid).get().exists:
+            done.add(fid)
+        else:
+            todo.append((fid, name, link))
+    todo = todo[:limit]
+    if todo:
+        info = fighter_info([link for _, _, link in todo])
+        photos = fighter_photos([link for _, _, link in todo])
+        for fid, name, link in todo:
+            page = fetch_page_html(link) or ""
+            facts = infobox_facts(html=page) if page else {}
+            time.sleep(0.5)  # be polite to Wikipedia
+            extra = info.get(link, {})
+            doc = {"name": name, "card": True, "wikiTitle": link, "arab": is_arab(name, extra.get("arab"))}
+            if photos.get(link):
+                doc["photo"] = photos[link]
+            if extra.get("ar"):
+                doc["nameAr"] = extra["ar"]
+            for k in ("nickname", "nationality", "yearsActive", "careerRecord", "age", "height"):
+                if facts.get(k) not in (None, ""):
+                    doc[k] = facts[k]
+            if extra.get("natEn"):
+                doc["nationality"] = extra["natEn"]
+            if extra.get("natAr"):
+                doc["nationalityAr"] = extra["natAr"]
+            record = ufc_record(page) if page else ""
+            if record:
+                doc["ufcRecord"] = record
+            wiki_recent = parse_record(page) if page else []
+            if wiki_recent:
+                doc["recentWiki"] = wiki_recent
+                doc["recent"] = merge_recent([], wiki_recent)
+            doc["searchTerms"] = search_terms(name + " " + doc.get("nameAr", ""), [])
+            db.collection("fighters").document(fid).set(doc, merge=True)
+            done.add(fid)
+            print(f"  card profile created: {name}" + (" (with photo)" if doc.get("photo") else ""))
+    ref.set({"ids": sorted(done)})
 
 
 def sync_legends(db):
@@ -4844,6 +4904,11 @@ def main():
         except Exception as e:
             print(f"Leaderboard failed: {e}")
     now_utc = datetime.now(timezone.utc)
+    if MODE == "full" and db is not None:
+        try:
+            ensure_card_profiles(db)
+        except Exception as e:
+            print(f"Card profiles failed: {type(e).__name__} {e}")
     if MODE in ("full", "fightnight") and db is not None:
         try:
             sync_quiz(db)  # only creates one per day
