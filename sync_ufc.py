@@ -234,6 +234,7 @@ def list_events():
                 "date": date,
                 "location": ", ".join(p for p in [venue, loc] if p),
                 "city": loc,
+                "venue": venue,
             })
     return events
 
@@ -754,6 +755,30 @@ _OV_NOT_SOLO = re.compile(r"\bvs?\.?\b|\band\b|&|\bwith\b|\bfans?\b|poster|logo|
 COMMONS_PER_RUN = 160
 _COMMONS_MMA = re.compile(r"mixed martial|\bmma\b|\bufc\b|ultimate fighting|bellator|\bpfl\b|one championship|"
                           r"octagon|\bcage\b|\bfighters?\b|kickbox|jiu.?jitsu|wrestl|sambo|combat sport|muay thai", re.I)
+
+
+# Event card backgrounds (Nov 5): ONLY public domain / CC0 photos (the app
+# can't show a credit line on the background yet), each one checked by eye.
+# An automatic Commons search was tried and rejected: it picked a concert
+# photo with performers for Etihad Arena and missed the good one for MSG.
+# Never replaces a picture set by hand in the admin screen: the bot remembers
+# the link it set in `bgAuto` and only changes bgImage when it's empty or
+# still that link. Unknown venue = a CC0 photo of a lit ring at night, so a
+# card is never empty. Add a venue: key = lowercase venue name.
+BG_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Boxing_ring1.jpg/1280px-Boxing_ring1.jpg"
+VENUE_BG = {
+    # File:Madison_Square_Garden_court.jpg, public domain (Ganley894)
+    "madison square garden": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Madison_Square_Garden_court.jpg/1280px-Madison_Square_Garden_court.jpg",
+}
+
+
+def venue_background(venue):
+    """Background link for an event at this venue (never empty)."""
+    v = re.sub(r"\s+", " ", (venue or "").lower()).strip()
+    for name, url in VENUE_BG.items():
+        if name in v:
+            return url
+    return BG_FALLBACK
 
 
 def commons_photo(name):
@@ -4836,6 +4861,18 @@ def main():
         }
         if old.get("nameArLocked"):
             new.pop("nameAr")
+        # Card background: fill when empty or still the bot's own pick
+        # (upcoming and just-finished events only).
+        try:
+            if start and start > datetime.now(timezone.utc) - timedelta(days=3):
+                bg_old = old.get("bgImage") or ""
+                if not bg_old or bg_old == old.get("bgAuto"):
+                    bg = venue_background(ev.get("venue", "") or ev.get("location", ""))
+                    if bg and bg != bg_old:
+                        new["bgImage"] = bg
+                        new["bgAuto"] = bg
+        except Exception as e:
+            print(f"  background failed: {type(e).__name__}")
         if not old.get("startLocked"):
             new["start"] = start
         if old.get("fightsLocked"):
