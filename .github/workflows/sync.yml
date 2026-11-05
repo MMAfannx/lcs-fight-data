@@ -39,6 +39,19 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '17 */2 * * *' && 'full' || 'fightnight') }}
           BACKFILL_FROM_YEAR: ${{ inputs.from_year || '2024' }}
+      # Website sidebar: this month's top 50 (nicknames + points) on the "site" branch.
+      - name: publish website top 50
+        if: ${{ inputs.mode != 'clips_debug' }}
+        run: |
+          [ -f /tmp/site/top50.json ] || exit 0
+          git config user.name "MMAfannx"
+          git config user.email "MMAfannx@users.noreply.github.com"
+          git checkout -q --orphan site
+          git rm -rq --cached .
+          cp /tmp/site/top50.json top50.json
+          git add top50.json
+          git commit -qm "website top 50"
+          git push -qf origin site
       # clips_debug: the report goes to the "clips-debug" branch (public titles only, no keys)
       - name: clips debug report
         if: ${{ inputs.mode == 'clips_debug' }}

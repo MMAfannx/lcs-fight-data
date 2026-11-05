@@ -2607,6 +2607,26 @@ def backfill_seasons(db, scores):
     print(f"Seasons: monthly totals rebuilt for {len(months)} player(s)")
 
 
+SITE_DIR = "/tmp/site"
+
+
+def write_site_top50(db):
+    """Top 50 of THIS month (all phones, Android and iPhone) for the website
+    sidebar. The workflow publishes it to the 'site' branch, read from
+    raw.githubusercontent.com. Nicknames and points only, nothing else."""
+    month = (datetime.now(timezone.utc) - timedelta(hours=8)).strftime("%Y-%m")
+    snap = db.collection("leaderboard").document(f"m_{month}").get()
+    d = snap.to_dict() or {} if snap.exists else {}
+    rows = [{"rank": r.get("rank"), "nickname": r.get("nickname"), "points": r.get("points"),
+             "correct": r.get("correct")} for r in (d.get("top") or [])[:50]]
+    os.makedirs(SITE_DIR, exist_ok=True)
+    with open(os.path.join(SITE_DIR, "top50.json"), "w", encoding="utf-8") as f:
+        json.dump({"month": month, "players": d.get("players", 0), "top": rows,
+                   "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")},
+                  f, ensure_ascii=False)
+    print(f"Website top 50: {len(rows)} name(s) for {month}")
+
+
 def build_leaderboard(db):
     scores = {s.id: (s.to_dict() or {}) for s in db.collection("scores").stream()}
     if not scores:
@@ -2663,6 +2683,10 @@ def build_leaderboard(db):
     batch.set(db.collection("leaderboard").document("current"),
               {"top": top, "players": len(ranked), "months": season_keys, "updated": datetime.now(timezone.utc)})
     batch.commit()
+    try:
+        write_site_top50(db)
+    except Exception as e:
+        print(f"Website top 50 failed: {type(e).__name__}")
     print(f"Leaderboard: {len(top)} shown of {len(ranked)} players; seasons: {', '.join(season_keys) or 'none'}")
 
 
@@ -4903,6 +4927,11 @@ def main():
             build_leaderboard(db)
         except Exception as e:
             print(f"Leaderboard failed: {e}")
+    elif db is not None and MODE == "full":
+        try:
+            write_site_top50(db)  # keeps the website's month current (1 read)
+        except Exception as e:
+            print(f"Website top 50 failed: {type(e).__name__}")
     now_utc = datetime.now(timezone.utc)
     if MODE == "full" and db is not None:
         try:
