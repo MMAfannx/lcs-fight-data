@@ -767,13 +767,12 @@ _COMMONS_MMA = re.compile(r"mixed martial|\bmma\b|\bufc\b|ultimate fighting|bell
 # never empty and neighbours differ. Add a venue: key = lowercase venue name.
 _C = "https://upload.wikimedia.org/wikipedia/commons/thumb/"
 # Rotated by week so cards next to each other differ. All checked by eye:
-# no brand logos on the mat, no promotion branding. US Air Force photos
+# no brand logos on the mat, no promotion branding, no unknown fighters'
+# faces (owner: random fighters say nothing about the event). US Air Force photos
 # (public domain) and CC0 photos.
 BG_POOL = [
     _C + "7/7f/Buckley_MMA_Fight_Night_%28863903%29.jpg/1280px-Buckley_MMA_Fight_Night_%28863903%29.jpg",  # cage under lights
-    _C + "d/d3/MenFight.jpg/1280px-MenFight.jpg",  # CC0, fighters in the cage
     _C + "f/f1/Buckley_MMA_Fight_Night_%28863866%29.jpg/1280px-Buckley_MMA_Fight_Night_%28863866%29.jpg",  # glove at the fence
-    _C + "d/d1/Buckley_MMA_Fight_Night_%28863867%29.jpg/1280px-Buckley_MMA_Fight_Night_%28863867%29.jpg",  # exchange in the cage
     _C + "d/da/Boxing_ring1.jpg/1280px-Boxing_ring1.jpg",  # CC0, lit ring at night
 ]
 BG_FALLBACK = BG_POOL[0]
