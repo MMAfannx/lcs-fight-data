@@ -763,22 +763,36 @@ _COMMONS_MMA = re.compile(r"mixed martial|\bmma\b|\bufc\b|ultimate fighting|bell
 # photo with performers for Etihad Arena and missed the good one for MSG.
 # Never replaces a picture set by hand in the admin screen: the bot remembers
 # the link it set in `bgAuto` and only changes bgImage when it's empty or
-# still that link. Unknown venue = a CC0 photo of a lit ring at night, so a
-# card is never empty. Add a venue: key = lowercase venue name.
-BG_FALLBACK = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Boxing_ring1.jpg/1280px-Boxing_ring1.jpg"
+# still that link. Unknown venue = one of BG_POOL by week, so a card is
+# never empty and neighbours differ. Add a venue: key = lowercase venue name.
+_C = "https://upload.wikimedia.org/wikipedia/commons/thumb/"
+# Rotated by week so cards next to each other differ. All checked by eye:
+# no brand logos on the mat, no promotion branding. US Air Force photos
+# (public domain) and CC0 photos.
+BG_POOL = [
+    _C + "7/7f/Buckley_MMA_Fight_Night_%28863903%29.jpg/1280px-Buckley_MMA_Fight_Night_%28863903%29.jpg",  # cage under lights
+    _C + "d/d3/MenFight.jpg/1280px-MenFight.jpg",  # CC0, fighters in the cage
+    _C + "f/f1/Buckley_MMA_Fight_Night_%28863866%29.jpg/1280px-Buckley_MMA_Fight_Night_%28863866%29.jpg",  # glove at the fence
+    _C + "d/d1/Buckley_MMA_Fight_Night_%28863867%29.jpg/1280px-Buckley_MMA_Fight_Night_%28863867%29.jpg",  # exchange in the cage
+    _C + "d/da/Boxing_ring1.jpg/1280px-Boxing_ring1.jpg",  # CC0, lit ring at night
+]
+BG_FALLBACK = BG_POOL[0]
 VENUE_BG = {
     # File:Madison_Square_Garden_court.jpg, public domain (Ganley894)
-    "madison square garden": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Madison_Square_Garden_court.jpg/1280px-Madison_Square_Garden_court.jpg",
+    "madison square garden": _C + "9/91/Madison_Square_Garden_court.jpg/1280px-Madison_Square_Garden_court.jpg",
 }
 
 
-def venue_background(venue):
-    """Background link for an event at this venue (never empty)."""
+def venue_background(venue, start=None):
+    """Background link for an event (never empty): its arena if we have a
+    checked free photo, else one of BG_POOL by week."""
     v = re.sub(r"\s+", " ", (venue or "").lower()).strip()
     for name, url in VENUE_BG.items():
         if name in v:
             return url
-    return BG_FALLBACK
+    if start is None:
+        return BG_FALLBACK
+    return BG_POOL[(start.toordinal() // 7) % len(BG_POOL)]
 
 
 def commons_photo(name):
@@ -4867,7 +4881,7 @@ def main():
             if start and start > datetime.now(timezone.utc) - timedelta(days=3):
                 bg_old = old.get("bgImage") or ""
                 if not bg_old or bg_old == old.get("bgAuto"):
-                    bg = venue_background(ev.get("venue", "") or ev.get("location", ""))
+                    bg = venue_background(ev.get("venue", "") or ev.get("location", ""), start)
                     if bg and bg != bg_old:
                         new["bgImage"] = bg
                         new["bgAuto"] = bg
