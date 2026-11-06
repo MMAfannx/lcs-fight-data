@@ -3489,7 +3489,13 @@ YT_CHANNELS = [
     ("@canalcombate", ("Combate", "Canal Combate"), True),
     ("@tsn", ("TSN",), True),
     ("@UFCIndia", ("UFC India",), False),
+    # Arab-world broadcasters (Nov 6): official, play in Arab countries.
+    # STARZPLAY holds the UFC rights for MENA (small channel, pinned by id).
+    ("@ADSportsTV", ("AD Sports",), True),
+    ("UCr6jMM3YWB89-mfUI_p5Msw", ("STARZPLAY Sports",), True),
 ]
+# Official channels allowed below YT_MIN_SUBS (checked by hand, pinned by id).
+YT_SMALL_OK = {"UCr6jMM3YWB89-mfUI_p5Msw"}  # STARZPLAY Sports
 YT_INDEX_V = 5   # raise when _yt_keep changes: UFC's own channels are read again once
 YT_CHUNK = 4000  # titles per Firestore document (a document holds at most 1 MB)
 _YT_SKIP_MORE = ("top ", "best of", "every ", "compilation", "recap", "full event", "full card", "odds",
@@ -3566,7 +3572,7 @@ def yt_official_channels():
                 continue
             c = items[0]
             title, subs, uploads = (c.get("snippet") or {}).get("title", ""), _yt_subs(c), _yt_uploads(c)
-            if title.lower() not in {n.lower() for n in names} or subs < YT_MIN_SUBS or not uploads:
+            if title.lower() not in {n.lower() for n in names} or (subs < YT_MIN_SUBS and c["id"] not in YT_SMALL_OK) or not uploads:
                 print(f"  YouTube channel {ref}: NOT verified ({title!r}, {subs} subscribers), skipped")
                 continue
             print(f"  YouTube channel verified: {title} ({ref} = {c['id']}, {subs:,} subscribers)")
@@ -3605,9 +3611,9 @@ def _yt_keep(title, ufc_only):
         return True  # UFC's own channels: keep every upload, the matcher decides
     if any(w in low for w in _YT_SKIP + _YT_SKIP_MORE):
         return False
-    if ufc_only and "ufc" not in low:
+    if ufc_only and "ufc" not in low and "يو إف سي" not in title and "يو اف سي" not in title:
         return False
-    return (" vs" in low or " v " in low or any(w in low for w in _YT_FINISH)
+    return (" vs" in low or " v " in low or " ضد " in title or any(w in low for w in _YT_FINISH)
             or any(w in _letters(title) for w in _YT_RESULT))
 
 
