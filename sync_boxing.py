@@ -688,6 +688,9 @@ BOXING_YT = [
     ("@RingMagazine", "ring"), ("@RiyadhSeason", "riyadh"),
 ]
 YT_MIN_SUBS = 200_000
+# Official channels allowed below YT_MIN_SUBS (owner's choice, Nov 6).
+YT_SMALL_OK = {"@ZuffaBoxing", "@RiyadhSeason"}
+YT_BOX_V = 2  # raise when the channel list changes (re-checks the channels now)
 YT_EVERY = timedelta(hours=3)
 CLIP_SKIP = ("press conference", "presser", "weigh", "face off", "faceoff", "face-off", "preview", "interview",
              "media day", "workout", "countdown", "prediction", "breakdown", "reaction", "callout", "calls out",
@@ -695,6 +698,9 @@ CLIP_SKIP = ("press conference", "presser", "weigh", "face off", "faceoff", "fac
              "ringwalk", "ring walk", "walkout", "arrival", "fight week", "behind the scenes", "every ", "top ",
              "best of", "compilation", "full card", "full event", "watch along", "watchalong", "watch-along",
              "live", "stream", "react", "analysis")
+# Arabic words (Riyadh Season titles): highlights / knockout / full fight; and press / weigh-in / face-off.
+CLIP_GOOD_AR = (("ملخص", 3), ("أبرز", 3), ("ابرز", 3), ("النزال كامل", 4), ("ضربة قاضية", 2), ("الضربة القاضية", 2))
+CLIP_SKIP_AR = ("مؤتمر", "الميزان", "وجها لوجه", "وجهاً لوجه", "مباشر", "بث", "مقابلة", "لقاء", "تحليل", "توقعات")
 CLIP_GOOD = (("full fight", 4), ("highlight", 3), ("knockout", 2), ("knocks out", 2), ("defeats", 1),
              ("stops", 1), ("stoppage", 1), ("tko", 1), ("ko!", 1), (" ko ", 1), ("buzzer beater", 1))
 
@@ -703,7 +709,7 @@ def _yt_channels(state):
     """Verified official channels: [{"id", "uploads", "title"}] (cached a week)."""
     cache = state.get("ytBoxing") or {}
     at = _as_dt(cache.get("at"))
-    if at and now_utc() - at < timedelta(days=7):
+    if at and now_utc() - at < timedelta(days=7) and cache.get("v") == YT_BOX_V:
         return cache.get("channels") or []
     found = []
     for handle, word in BOXING_YT:
@@ -719,12 +725,12 @@ def _yt_channels(state):
         c = items[0]
         title = (c.get("snippet") or {}).get("title", "")
         subs = ufc._yt_subs(c)
-        if word not in title.lower() or subs < YT_MIN_SUBS:
+        if word not in title.lower() or (subs < YT_MIN_SUBS and handle not in YT_SMALL_OK):
             say(f"clips: {handle} = '{title}' ({subs} subscribers) not accepted")
             continue
         found.append({"id": c["id"], "uploads": ufc._yt_uploads(c), "title": title})
         say(f"clips: verified {title} ({subs // 1000}k subscribers)")
-    state["ytBoxing"] = {"at": now_utc().isoformat(), "channels": found}
+    state["ytBoxing"] = {"at": now_utc().isoformat(), "channels": found, "v": YT_BOX_V}
     return found
 
 
@@ -737,8 +743,10 @@ def _yt_index(db, state, force=False):
     if not force and at and now_utc() - at < YT_EVERY:
         return rows
     seen = {r["v"] for r in rows}
-    for ch in _yt_channels(state):
-        pages = 1 if rows else 6  # the first time, go back a few hundred videos
+    done = set(saved.get("chs") or [])
+    channels = _yt_channels(state)
+    for ch in channels:
+        pages = 1 if ch["id"] in done else 6  # a new channel: go back a few hundred videos
         token = None
         for _ in range(pages):
             params = {"part": "snippet", "playlistId": ch["uploads"], "maxResults": 50}
@@ -762,7 +770,7 @@ def _yt_index(db, state, force=False):
     cutoff = now_utc() - timedelta(days=PAST_DAYS + 10)
     rows = [r for r in rows if (_as_dt(r["at"]) or now_utc()) > cutoff][-4000:]
     if ref is not None:
-        ref.set({"rows": rows, "at": now_utc()})
+        ref.set({"rows": rows, "at": now_utc(), "chs": [c["id"] for c in channels]})
     say(f"clips: {len(rows)} official boxing videos indexed")
     return rows
 
@@ -803,6 +811,9 @@ def add_clips(db, cards, state, force=False):
         a, b = ufc.norm(last_name(f["fighterA"])), ufc.norm(last_name(f["fighterB"]))
         if len(a) < 3 or len(b) < 3:
             continue
+        # Arabic titles (Riyadh Season): the Arabic last names count too.
+        a_ar = ufc._ar_norm(last_name(f.get("fighterAAr") or "")).replace(" ", "")
+        b_ar = ufc._ar_norm(last_name(f.get("fighterBAr") or "")).replace(" ", "")
         best = []
         for r in rows:
             low = r["t"].lower()
@@ -810,9 +821,12 @@ def add_clips(db, cards, state, force=False):
             when = _as_dt(r["at"])
             if not when or not (day - timedelta(hours=12) <= when <= day + timedelta(days=5)):
                 continue
-            if a not in letters or b not in letters or any(w in low for w in CLIP_SKIP):
+            arabic = ufc._ar_norm(r["t"]).replace(" ", "")
+            has_a = a in letters or (len(a_ar) >= 3 and a_ar in arabic)
+            has_b = b in letters or (len(b_ar) >= 3 and b_ar in arabic)
+            if not (has_a and has_b) or any(w in low for w in CLIP_SKIP + CLIP_SKIP_AR):
                 continue
-            score = sum(p for w, p in CLIP_GOOD if w in f" {low} ")
+            score = sum(p for w, p in CLIP_GOOD + CLIP_GOOD_AR if w in f" {low} ")
             if score > 0:  # must say highlights / full fight / KO...
                 best.append((score, when, r))
         best.sort(key=lambda x: (-x[0], x[1]))
