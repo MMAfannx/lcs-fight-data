@@ -701,6 +701,7 @@ CLIP_SKIP = ("press conference", "presser", "weigh", "face off", "faceoff", "fac
 # Arabic words (Riyadh Season titles): highlights / knockout / full fight; and press / weigh-in / face-off.
 CLIP_GOOD_AR = (("ملخص", 3), ("أبرز", 3), ("ابرز", 3), ("النزال كامل", 4), ("ضربة قاضية", 2), ("الضربة القاضية", 2))
 CLIP_SKIP_AR = ("مؤتمر", "الميزان", "وجها لوجه", "وجهاً لوجه", "مباشر", "بث", "مقابلة", "لقاء", "تحليل", "توقعات")
+FIGHT_WORDS = (" vs", "knocks out", "knockout", " over ", "defeats", " ko", "tko", "beats", "stops", " ضد ")
 CLIP_GOOD = (("full fight", 4), ("highlight", 3), ("knockout", 2), ("knocks out", 2), ("defeats", 1),
              ("stops", 1), ("stoppage", 1), ("tko", 1), ("ko!", 1), (" ko ", 1), ("buzzer beater", 1))
 
@@ -817,11 +818,15 @@ def add_clips(db, cards, state, force=False):
         best = []
         for r in rows:
             low = r["t"].lower()
-            letters = ufc.norm(r["t"])
+            # "X knocks out Y: Garcia vs Benn" names the fight first and the
+            # event after the colon: then the names must be in the first part.
+            parts = re.split(r"[:|]", r["t"])
+            head = parts[0] if len(parts) > 1 and any(w in f" {parts[0].lower()} " for w in FIGHT_WORDS) else r["t"]
+            letters = ufc.norm(head)
             when = _as_dt(r["at"])
             if not when or not (day - timedelta(hours=12) <= when <= day + timedelta(days=5)):
                 continue
-            arabic = ufc._ar_norm(r["t"]).replace(" ", "")
+            arabic = ufc._ar_norm(head).replace(" ", "")
             has_a = a in letters or (len(a_ar) >= 3 and a_ar in arabic)
             has_b = b in letters or (len(b_ar) >= 3 and b_ar in arabic)
             if not (has_a and has_b) or any(w in low for w in CLIP_SKIP + CLIP_SKIP_AR):
