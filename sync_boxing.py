@@ -275,7 +275,8 @@ def sync_champions(db, state, force=False):
         for b in d["belts"]:
             i = info.get(b["title"], {}) if b["title"] else {}
             row = {"org": b["org"], "name": b["name"], "nameAr": i.get("ar", ""),
-                   "nat": b["nat"] or i.get("nat", ""), "record": b["record"], "wiki": b["title"]}
+                   "nat": b["nat"] or i.get("nat", ""), "record": b["record"], "wiki": b["title"],
+                   "pid": boxer_id(b["name"]) if b["name"] else ""}
             if i.get("photo"):
                 row["photo"] = i["photo"]
             rows.append(row)
