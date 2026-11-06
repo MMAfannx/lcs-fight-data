@@ -2655,14 +2655,23 @@ def write_site_top50(db):
     month = (datetime.now(timezone.utc) - timedelta(hours=8)).strftime("%Y-%m")
     snap = db.collection("leaderboard").document(f"m_{month}").get()
     d = snap.to_dict() or {} if snap.exists else {}
-    rows = [{"rank": r.get("rank"), "nickname": r.get("nickname"), "points": r.get("points"),
-             "correct": r.get("correct")} for r in (d.get("top") or [])[:50]]
+    rows = [{"rank": r.get("rank"), "nickname": r.get("nickname"), "flag": clean_fan_flag(r.get("flag")),
+             "points": r.get("points"), "correct": r.get("correct")} for r in (d.get("top") or [])[:50]]
     os.makedirs(SITE_DIR, exist_ok=True)
     with open(os.path.join(SITE_DIR, "top50.json"), "w", encoding="utf-8") as f:
         json.dump({"month": month, "players": d.get("players", 0), "top": rows,
                    "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")},
                   f, ensure_ascii=False)
     print(f"Website top 50: {len(rows)} name(s) for {month}")
+
+
+def clean_fan_flag(raw):
+    """A fan's flag code for the leaderboard: 2 capital letters or ''.
+    Owner's rule: Israel (IL) is always shown as Palestine (PS)."""
+    code = str(raw or "").strip().upper()
+    if not re.fullmatch(r"[A-Z]{2}", code):
+        return ""
+    return "PS" if code == "IL" else code
 
 
 def build_leaderboard(db):
@@ -2673,7 +2682,9 @@ def build_leaderboard(db):
         backfill_seasons(db, scores)
     except Exception as e:
         print(f"Seasons backfill failed: {type(e).__name__}")
-    nicknames = {s.id: (s.to_dict() or {}).get("nickname", "") for s in db.collection("profiles").stream()}
+    profiles = {s.id: (s.to_dict() or {}) for s in db.collection("profiles").stream()}
+    nicknames = {uid: p.get("nickname", "") for uid, p in profiles.items()}
+    flags = {uid: clean_fan_flag(p.get("flag")) for uid, p in profiles.items()}
 
     def num(d, k):
         try:
@@ -2692,7 +2703,7 @@ def build_leaderboard(db):
         # Up to 5000 names fit safely in one Firestore document (1 MB limit).
         if nick and nick.lower() not in used and len(top) < 5000:
             used.add(nick.lower())
-            top.append({"rank": rank, "nickname": nick, "points": key[0],
+            top.append({"rank": rank, "nickname": nick, "flag": flags.get(uid, ""), "points": key[0],
                         "correct": key[1], "events": num(sc, "events")})
         if sc.get("rank") != rank or sc.get("players") != len(ranked):
             batch.set(db.collection("scores").document(uid), {"rank": rank, "players": len(ranked)}, merge=True)
@@ -2714,8 +2725,8 @@ def build_leaderboard(db):
             nick = clean_nickname(nicknames.get(uid, ""))
             if nick and nick.lower() not in mused and len(mtop) < 5000:
                 mused.add(nick.lower())
-                mtop.append({"rank": mrank, "nickname": nick, "points": k[0], "correct": k[1],
-                             "events": num(m, "events")})
+                mtop.append({"rank": mrank, "nickname": nick, "flag": flags.get(uid, ""), "points": k[0],
+                             "correct": k[1], "events": num(m, "events")})
         batch.set(db.collection("leaderboard").document(f"m_{key}"),
                   {"top": mtop, "players": len(rows), "month": key, "updated": datetime.now(timezone.utc)})
     batch.set(db.collection("leaderboard").document("current"),
