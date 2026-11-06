@@ -151,7 +151,9 @@ def _record(text):
     m = re.search(r"\b(\d{1,3})\s*[–\-]\s*(\d{1,3})(?:\s*[–\-]\s*(\d{1,3}))?\b", text or "")
     if not m:
         return ""
-    return "-".join(g for g in m.groups() if g)
+    rec = "-".join(g for g in m.groups() if g)
+    ko = re.search(r"\((\d+)\s*KOs?\)", text or "", re.I)
+    return f"{rec} ({ko.group(1)} KO)" if ko else rec
 
 
 def _org_of(header):
