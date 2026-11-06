@@ -413,6 +413,14 @@ def build_cards(bouts, state, champs):
         name_ar = ""
         if m.get("fighterAAr") and m.get("fighterBAr"):
             name_ar = f"ملاكمة: {last_name(m['fighterAAr'])} ضد {last_name(m['fighterBAr'])}"
+        # A one- or two-bout listing with little-known boxers looks empty in
+        # the app: keep a card only with 3+ bouts, a title fight, or a main
+        # event between two boxers who both have a Wikipedia page.
+        main_bout = ordered[0]
+        known = bool(titles.get(main_bout["a"]) and titles.get(main_bout["b"]))
+        if len(fights) < 3 and not m.get("titles") and not known:
+            say(f"  skipped small card: {m['fighterA']} vs {m['fighterB']} ({len(fights)} bout(s))")
+            continue
         start = g[0]["time"]
         cid = "bx_" + start.strftime("%Y%m%d") + "_" + hashlib.sha1(m["id"].encode()).hexdigest()[:6]
         cards.append({"id": cid, "name": name, "nameAr": name_ar, "start": start,
