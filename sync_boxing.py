@@ -764,6 +764,9 @@ FULL_CHUNK = 4000            # videos per Firestore document (bot only: boxingYt
 FULL_PAGES_PER_RUN = 120     # 50 videos a page, 1 quota unit each
 _ORDINAL = {1: (" i ", " 1 ", "first"), 2: (" ii ", " 2 ", "rematch"), 3: (" iii ", " 3 ", "trilogy", "third"),
             4: (" iv ", " 4 ")}
+BOUT_WORDS = (" vs", " v ", "against", " over ", "defeats", "knockout of", " ko of", "beats", "stops", " ضد ")
+PROFILE_SKIP = ("best highlights", "career highlights", "best knockouts", "best moments", "greatest knockouts",
+                " and ")  # "X and Y ..." is never one fight
 ALIASES = {"Muhammad Ali": ["clay"], "Naseem Hamed": ["naseem", "prince naseem"]}
 
 
@@ -850,6 +853,9 @@ def profile_clips(profiles, rows, state):
         if not mine:
             continue
         opp_keys = [_key(last_name(f["o"])) for f in p["fights"]]
+        same_year = {}
+        for f, ok in zip(p["fights"], opp_keys):
+            same_year[(ok, (f.get("d") or "")[:4])] = same_year.get((ok, (f.get("d") or "")[:4]), 0) + 1
         met = {}
         for f, ok in zip(reversed(p["fights"]), reversed(opp_keys)):  # oldest first: 1st, 2nd meeting...
             met[ok] = met.get(ok, 0) + 1
@@ -876,7 +882,11 @@ def profile_clips(profiles, rows, state):
                     continue
                 title = re.sub(r"#\S+", " ", r["t"])
                 low = f" {title.lower()} "
-                if any(w in low for w in CLIP_SKIP):
+                if any(w in low for w in CLIP_SKIP + PROFILE_SKIP):
+                    continue
+                # Must be about a fight between them ("vs", "against", "knockout of"...),
+                # not a career compilation ("Cotto and Mayweather best highlights").
+                if not any(w in low for w in BOUT_WORDS):
                     continue
                 score = sum(pts for w, pts in CLIP_GOOD if w in low) + (1 if "classic" in low else 0)
                 if score <= 0:
@@ -886,6 +896,8 @@ def profile_clips(profiles, rows, state):
                     continue  # another bout between them
                 if met[ok] > 1 and year not in years and not any(tok in low for tok in _ORDINAL.get(k, ())):
                     continue  # rematch: can't tell which one
+                if same_year.get((ok, year), 0) > 1 and not any(tok in low for tok in _ORDINAL.get(k, ())):
+                    continue  # two meetings that year (Leonard–Durán 1980): the number decides
                 named = [m for m in (2, 3, 4) if any(tok in low for tok in _ORDINAL[m])]
                 if named and k not in named and year not in years:
                     continue  # the title is about another meeting ("II")
