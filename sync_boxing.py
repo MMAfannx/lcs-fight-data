@@ -165,8 +165,8 @@ def _org_of(header):
 
 
 def _clean_division(text):
-    text = (text or "").split("/")[0]  # "Cruiserweight/Junior heavyweight" -> "Cruiserweight"
-    text = re.sub(r"\(.*?\)", "", text)
+    text = re.sub(r"\(.*?\)|\(.*$", "", text or "")
+    text = text.split("/")[0]  # "Cruiserweight/Junior heavyweight" -> "Cruiserweight"
     text = re.sub(r"\[.*?\]|\bedit\b", "", text)
     return re.sub(r"\s+", " ", text).strip(" :–-")
 
@@ -252,6 +252,12 @@ def sync_champions(db, state, force=False):
     if not html:
         say("champions: page could not load, kept the old list")
         return state.get("champs") or []
+    if os.environ.get("BOXING_DUMP"):
+        # Test runs: save the first tables as they are, to check the parser.
+        soup = BeautifulSoup(html, "html.parser")
+        with open(os.environ["BOXING_DUMP"], "w") as fh:
+            for i, el in enumerate(soup.find_all(["h2", "h3", "h4", "table"])[:14]):
+                fh.write(str(el)[:12000] + "\n\n")
     divisions = parse_champions(html)
     belts = sum(1 for d in divisions for b in d["belts"] if b["name"])
     say(f"champions: {len(divisions)} weight classes, {belts} belts held")

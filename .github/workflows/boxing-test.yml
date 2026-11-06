@@ -26,6 +26,7 @@ jobs:
           SYNC_MODE: boxing_test
           BOXING_ALERTS: "0"
           BOXING_REPORT: /tmp/boxing_report.txt
+          BOXING_DUMP: /tmp/boxing_tables.html
       - name: save report
         run: |
           [ -f /tmp/boxing_report.txt ] || echo "no report" > /tmp/boxing_report.txt
@@ -35,6 +36,7 @@ jobs:
           git checkout -q --orphan boxing-debug
           git rm -rq --cached .
           cp /tmp/boxing_report.txt boxing_report.txt
-          git add boxing_report.txt
+          cp /tmp/boxing_tables.html boxing_tables.html 2>/dev/null || true
+          git add boxing_report.txt boxing_tables.html 2>/dev/null || git add boxing_report.txt
           git commit -qm "boxing test report"
           git push -qf origin boxing-debug
