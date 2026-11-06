@@ -4458,7 +4458,10 @@ def probe_accounts():
     """Read only: which UFC regional channels/accounts exist (name, size)."""
     if YT_KEY:
         for h in ("@UFCArabia", "@ufcarabic", "@UFCArabic", "@UFC_Arabia", "@UFCEurope", "@UFCIndia", "@ufcindiaofficial",
-                  "@UFCMENA", "@UFCMiddleEast", "@ufcespanol"):
+                  "@UFCMENA", "@UFCMiddleEast", "@ufcespanol",
+                  # MENA rights holder (STARZPLAY) and Abu Dhabi Sports, Nov 6
+                  "@STARZPLAY", "@starzplayarabia", "@STARZPLAYSports", "@starzplaysport",
+                  "@StarzplayArabic", "@ADSportsTV", "@AbuDhabiSports", "@ADMediaSports"):
             try:
                 it = (_yt_get("channels", {"part": "snippet,statistics,contentDetails", "forHandle": h}).get("items") or [None])[0]
                 if it:
