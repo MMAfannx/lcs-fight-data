@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -745,6 +746,136 @@ def profile(title, name, rows, info, limit=MAX_FIGHTS):
     return p
 
 
+# ---------------------------------------------------------------- legends' clips (full archive)
+
+FULL_CHUNK = 4000            # videos per Firestore document (bot only: boxingYtAll/*)
+FULL_PAGES_PER_RUN = 120     # 50 videos a page, 1 quota unit each
+_ORDINAL = {1: (" i ", " 1 ", "first"), 2: (" ii ", " 2 ", "rematch"), 3: (" iii ", " 3 ", "trilogy", "third"),
+            4: (" iv ", " 4 ")}
+ALIASES = {"Muhammad Ali": ["clay"], "Naseem Hamed": ["naseem", "prince naseem"]}
+
+
+def _key(text):
+    """Lowercase letters/digits without accents ("Chávez" -> "chavez")."""
+    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def yt_full_index(db, state):
+    """Every upload of the official channels, old classics too. Built over
+    several runs (FULL_PAGES_PER_RUN pages each), then the newest page once a day."""
+    if db is None or not ufc.YT_KEY:
+        return []
+    col = db.collection("boxingYtAll")
+    rows = []
+    for doc in col.stream():
+        rows += (doc.to_dict() or {}).get("rows") or []
+    seen = {r["v"] for r in rows}
+    prog = state.setdefault("ytFull", {})
+    pages, added = 0, 0
+    for ch in _yt_channels(state):
+        p = prog.setdefault(ch["id"], {"token": None, "done": False, "at": ""})
+        if p["done"]:
+            at = _as_dt(p.get("at"))
+            if at and now_utc() - at < timedelta(hours=24):
+                continue
+            token, limit = None, 1
+        else:
+            token, limit = p.get("token"), FULL_PAGES_PER_RUN
+        n = 0
+        while n < limit and pages < FULL_PAGES_PER_RUN:
+            params = {"part": "snippet", "playlistId": ch["uploads"], "maxResults": 50}
+            if token:
+                params["pageToken"] = token
+            try:
+                data = ufc._yt_get("playlistItems", params)
+            except Exception as e:
+                say(f"archive: {ch['title']} stopped ({type(e).__name__})")
+                break
+            pages += 1
+            n += 1
+            for it in data.get("items") or []:
+                sn = it.get("snippet") or {}
+                vid = (sn.get("resourceId") or {}).get("videoId")
+                if vid and vid not in seen:
+                    seen.add(vid)
+                    added += 1
+                    rows.append({"v": vid, "t": sn.get("title", ""), "at": sn.get("publishedAt", ""), "ch": ch["title"]})
+            token = data.get("nextPageToken")
+            if not token:
+                p["done"] = True
+                break
+        if not p["done"]:
+            p["token"] = token
+        p["at"] = now_utc().isoformat()
+    if added:
+        rows.sort(key=lambda r: r["at"])
+        for i in range(0, len(rows), FULL_CHUNK):
+            col.document(f"{i // FULL_CHUNK:03d}").set({"rows": rows[i:i + FULL_CHUNK]})
+    left = sum(1 for p in prog.values() if not p.get("done"))
+    say(f"archive: {len(rows)} official videos ({added} new, {pages} pages read, {left} channel(s) still loading)")
+    return rows
+
+
+def profile_clips(profiles, rows, state):
+    """Official clips for the fights on legends' and champions' profiles.
+    Both last names as words in the title + a highlight word; when two boxers
+    met more than once, the title must carry the year or the number (II, 3,
+    rematch, trilogy). Clips must play in Arab countries."""
+    words = {}
+    for i, r in enumerate(rows):
+        for w in set(_key(x) for x in re.split(r"[\s:|,.!?'’\-()]+", re.sub(r"#\S+", " ", r["t"]))):
+            if len(w) >= 3:
+                words.setdefault(w, []).append(i)
+    found = []
+    for p in profiles:
+        me = {_key(last_name(p["name"]))} | {_key(a) for a in ALIASES.get(p["name"], [])}
+        mine = set().union(*(words.get(m, []) for m in me))
+        if not mine:
+            continue
+        opp_keys = [_key(last_name(f["o"])) for f in p["fights"]]
+        met = {}
+        for f, ok in zip(reversed(p["fights"]), reversed(opp_keys)):  # oldest first: 1st, 2nd meeting...
+            met[ok] = met.get(ok, 0) + 1
+            f["_k"] = met[ok]
+        for f, ok in zip(p["fights"], opp_keys):
+            k = f.pop("_k", 1)
+            if len(ok) < 3 or f.get("c"):
+                continue
+            year = (f.get("d") or "")[:4]
+            best = None
+            for i in mine & set(words.get(ok, [])):
+                r = rows[i]
+                title = re.sub(r"#\S+", " ", r["t"])
+                low = f" {title.lower()} "
+                if any(w in low for w in CLIP_SKIP):
+                    continue
+                score = sum(pts for w, pts in CLIP_GOOD if w in low) + (1 if "classic" in low else 0)
+                if score <= 0:
+                    continue
+                years = set(re.findall(r"\b(?:19|20)\d{2}\b", title))
+                if years and year not in years:
+                    continue  # another bout between them
+                if met[ok] > 1 and year not in years and not any(tok in low for tok in _ORDINAL.get(k, ())):
+                    continue  # rematch: can't tell which one
+                if best is None or score > best[0]:
+                    best = (score, r)
+            if best:
+                found.append((f, best[1]))
+    cache = state.setdefault("ytOk", {})
+    todo = sorted({r["v"] for _, r in found if r["v"] not in cache})
+    cache.update(_plays_in_arab_countries(todo) if todo else {})
+    n = 0
+    for f, r in found:
+        if cache.get(r["v"], True):
+            f["c"] = {"url": f"https://www.youtube.com/watch?v={r['v']}", "ch": r["ch"]}
+            n += 1
+    if len(cache) > 6000:
+        state["ytOk"] = dict(list(cache.items())[-4000:])
+    say(f"profile clips: {n} fights on legends' and champions' profiles have an official clip")
+    return n
+
+
 def sync_profiles(db, state, force=False):
     """Legends (weekly) and current champions' profiles (with the past
     results run), saved in meta/boxingChamps next to the champions."""
@@ -782,6 +913,21 @@ def sync_profiles(db, state, force=False):
         update["profiles"] = {boxer_id(name): profile(title, name, rows, info, 25)
                               for title, (name, rows) in _champ_rows.items() if rows}
         say(f"champion profiles: {len(update['profiles'])}")
+    # Clips for the profiles: new or saved profiles, against the full archive.
+    try:
+        rows = yt_full_index(db, state)
+    except Exception as e:
+        rows = []
+        say(f"archive failed ({type(e).__name__})")
+    if rows:
+        saved = None
+        if "legends" not in update or "profiles" not in update:
+            saved = ref.get().to_dict() or {}
+        legends = update.get("legends") or (saved or {}).get("legends") or []
+        profiles = update.get("profiles") or (saved or {}).get("profiles") or {}
+        n = profile_clips(list(legends) + list(profiles.values()), rows, state)
+        if n or update:
+            update["legends"], update["profiles"] = legends, profiles
     if update:
         ref.set(update, merge=True)
 
@@ -805,11 +951,14 @@ BOXING_YT = [
     ("@QueensberryPromotions", "queensberry"), ("@GoldenBoyBoxing", "golden boy"),
     ("@PremierBoxingChampions", "premier boxing"), ("@ZuffaBoxing", "zuffa"),
     ("@RingMagazine", "ring"), ("@RiyadhSeason", "riyadh"),
+    # Archives with classic fights (each still checked: name word + size).
+    ("@HBOBoxing", "hbo"), ("@SHOsports", "showtime"), ("@ESPNRingside", "ringside"),
+    ("@MuhammadAli", "ali"), ("@miketyson", "tyson"),
 ]
 YT_MIN_SUBS = 200_000
 # Official channels allowed below YT_MIN_SUBS (owner's choice, Nov 6).
 YT_SMALL_OK = {"@ZuffaBoxing", "@RiyadhSeason"}
-YT_BOX_V = 2  # raise when the channel list changes (re-checks the channels now)
+YT_BOX_V = 3  # raise when the channel list changes (re-checks the channels now)
 YT_EVERY = timedelta(hours=3)
 CLIP_SKIP = ("press conference", "presser", "weigh", "face off", "faceoff", "face-off", "preview", "interview",
              "media day", "workout", "countdown", "prediction", "breakdown", "reaction", "callout", "calls out",
