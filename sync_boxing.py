@@ -123,18 +123,28 @@ def people_info(titles, state):
 # ---------------------------------------------------------------- champions
 
 def _person_link(cell):
-    """First link to a person in a table cell (skips flag icons and footnotes)."""
+    """First link to a person in a table cell (skips flag icons and footnotes).
+    A boxer without an English article (red link) gives (name, "")."""
     for a in cell.find_all("a", href=True):
         href = a["href"]
-        if not href.startswith("/wiki/") or "redlink" in (a.get("class") or []):
-            continue
         if a.find("img") or a.find_parent(class_="flagicon") or a.find_parent("sup"):
+            continue
+        if "redlink" in (a.get("class") or []) or "redlink=1" in href:
+            return a.get_text(" ", strip=True), ""
+        if not href.startswith("/wiki/"):
             continue
         title = requests.utils.unquote(href[len("/wiki/"):]).replace("_", " ")
         if ":" in title.split("#")[0]:
             continue  # File:, Category:, Help:
         return a.get_text(" ", strip=True), title.split("#")[0]
     return None, None
+
+
+def _first_line(cell):
+    """The champion's own line of a cell. Interim / regular holders and notes
+    come after a line break and are not the champion."""
+    first = re.split(r"<br\s*/?>", str(cell), maxsplit=1)[0]
+    return BeautifulSoup(first, "html.parser")
 
 
 def _record(text):
@@ -155,7 +165,8 @@ def _org_of(header):
 
 
 def _clean_division(text):
-    text = re.sub(r"\(.*?\)", "", text or "")
+    text = (text or "").split("/")[0]  # "Cruiserweight/Junior heavyweight" -> "Cruiserweight"
+    text = re.sub(r"\(.*?\)", "", text)
     text = re.sub(r"\[.*?\]|\bedit\b", "", text)
     return re.sub(r"\s+", " ", text).strip(" :–-")
 
@@ -203,11 +214,21 @@ def parse_champions(html):
             for j, org in cols.items():
                 cell = row[j]
                 text = ufc.clean(cell)
-                shown, title = _person_link(cell)
-                if not shown or re.search(r"\bvacant\b", text, re.I) and not title:
+                if not text:
+                    continue  # this body has no title in this weight class
+                line = _first_line(cell)
+                line_text = ufc.clean(line)
+                if re.search(r"\bvacant\b", line_text, re.I):
                     belts.append({"org": org, "name": "", "title": "", "nat": "", "record": ""})
                     continue
-                flag = cell.find(class_="flagicon")
+                shown, title = _person_link(line)
+                if not shown:
+                    # Plain text name (no link): the words before the record.
+                    shown = re.split(r"\s*[\d(]", line_text, maxsplit=1)[0].strip(" ,")
+                    title = ""
+                if not shown or not re.search(r"[^\W\d_]", shown):
+                    continue  # "–", "N/A": no title here
+                flag = line.find(class_="flagicon") or cell.find(class_="flagicon")
                 belts.append({
                     "org": org,
                     "name": shown,
