@@ -741,6 +741,18 @@ def profile(title, name, rows, info, limit=MAX_FIGHTS):
          "record": f"{wins}-{losses}" + (f"-{draws}" if draws else ""), "ko": kos,
          "years": f"{years[0]}–{years[-1]}" if years else "", "total": len(rows),
          "fights": [_short_fight(r) for r in _pick_fights(rows, limit)]}
+    # Which meeting each kept fight was (from the FULL record: 3rd of 3...),
+    # so a rematch clip ("II", "III") lands on the right fight.
+    order, total = {}, {}
+    for r in reversed(rows):  # oldest first
+        k = _key(last_name(r["opp"]))
+        total[k] = total.get(k, 0) + 1
+        order[id(r)] = total[k]
+    kept = _pick_fights(rows, limit)
+    for row, r in zip(p["fights"], kept):
+        k = _key(last_name(r["opp"]))
+        if total.get(k, 0) > 1:
+            row["k"], row["km"] = order[id(r)], total[k]
     if i.get("photo"):
         p["photo"] = i["photo"]
     return p
@@ -822,14 +834,18 @@ def profile_clips(profiles, rows, state):
     Both last names as words in the title + a highlight word; when two boxers
     met more than once, the title must carry the year or the number (II, 3,
     rematch, trilogy). Clips must play in Arab countries."""
-    words = {}
+    words, row_words = {}, []
     for i, r in enumerate(rows):
-        for w in set(_key(x) for x in re.split(r"[\s:|,.!?'’\-()]+", re.sub(r"#\S+", " ", r["t"]))):
+        ws = {_key(x) for x in re.split(r"[\s:|,.!?'’\-()\"]+", re.sub(r"#\S+", " ", r["t"]))}
+        row_words.append(ws)
+        for w in ws:
             if len(w) >= 3:
                 words.setdefault(w, []).append(i)
     found = []
     for p in profiles:
         me = {_key(last_name(p["name"]))} | {_key(a) for a in ALIASES.get(p["name"], [])}
+        me_first = _key(p["name"].split()[0])
+        me_alias = {_key(a) for a in ALIASES.get(p["name"], [])}
         mine = set().union(*(words.get(m, []) for m in me))
         if not mine:
             continue
@@ -840,12 +856,24 @@ def profile_clips(profiles, rows, state):
             f["_k"] = met[ok]
         for f, ok in zip(p["fights"], opp_keys):
             k = f.pop("_k", 1)
+            if f.get("km"):  # counted from the full record when the profile was built
+                k, met[ok] = f["k"], max(met.get(ok, 1), f["km"])
             if len(ok) < 3 or f.get("c"):
                 continue
             year = (f.get("d") or "")[:4]
+            opp_first = _key((f["o"] or "").split()[0]) if f.get("o") else ""
+            same_last = ok in me
             best = None
             for i in mine & set(words.get(ok, [])):
                 r = rows[i]
+                ws = row_words[i]
+                # Surnames can be first names (Tyson Fury, Francis Ngannou):
+                # at least one boxer's first name (or alias) must be there too,
+                # both when the two share a surname.
+                first_me = me_first in ws or bool(me_alias & ws)
+                first_opp = len(opp_first) >= 3 and opp_first in ws
+                if not (first_me and first_opp if same_last else first_me or first_opp):
+                    continue
                 title = re.sub(r"#\S+", " ", r["t"])
                 low = f" {title.lower()} "
                 if any(w in low for w in CLIP_SKIP):
@@ -858,6 +886,9 @@ def profile_clips(profiles, rows, state):
                     continue  # another bout between them
                 if met[ok] > 1 and year not in years and not any(tok in low for tok in _ORDINAL.get(k, ())):
                     continue  # rematch: can't tell which one
+                named = [m for m in (2, 3, 4) if any(tok in low for tok in _ORDINAL[m])]
+                if named and k not in named and year not in years:
+                    continue  # the title is about another meeting ("II")
                 if best is None or score > best[0]:
                     best = (score, r)
             if best:
