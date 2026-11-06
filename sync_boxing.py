@@ -483,8 +483,17 @@ def record_rows(html):
     """Rows of a boxer's "Professional boxing record" table:
     [{"result", "opp", "oppTitle", "type", "round", "date", "location", "notes"}]."""
     soup = BeautifulSoup(html or "", "html.parser")
-    out = []
-    for table in soup.find_all("table", class_="wikitable"):
+    out, heading = [], ""
+    for table in soup.find_all(["h2", "h3", "h4", "table"]):
+        if table.name != "table":
+            heading = table.get_text(" ", strip=True).lower()
+            continue
+        if "wikitable" not in (table.get("class") or []):
+            continue
+        # Professional boxing only: no exhibition, amateur, kickboxing or MMA records.
+        caption = (table.find("caption").get_text(" ", strip=True).lower() if table.find("caption") else "")
+        if re.search(r"exhibition|amateur|kickboxing|mixed martial|mma|bare.knuckle", heading + " " + caption):
+            continue
         grid = ufc.expand_table(table)
         if not grid:
             continue
@@ -748,7 +757,14 @@ def sync_profiles(db, state, force=False):
         info = people_info(LEGENDS, state)
         legends = []
         for title in LEGENDS:
-            rows = record_rows(ufc.fetch_page_html(title))
+            html = ufc.fetch_page_html(title)
+            rows = record_rows(html)
+            if len(rows) < 5:
+                # Some boxers' records have their own page ("Main article: ...").
+                link = BeautifulSoup(html or "", "html.parser").find(
+                    "a", href=True, title=re.compile(r"boxing record|boxing career", re.I))
+                if link:
+                    rows = record_rows(ufc.fetch_page_html(link["title"]))
             if len(rows) < 5:
                 say(f"legend skipped (no record table found): {title}")
                 continue
