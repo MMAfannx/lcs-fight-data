@@ -8,10 +8,10 @@ on:
   workflow_dispatch:              # run by hand from GitHub
     inputs:
       mode:
-        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now, clips = find official highlight clips of recent events now, clips_backfill = build the YouTube index and add clips to ALL past fights (once), clips_debug = print why clips are missing (changes nothing)"
+        description: "full = normal check, backfill = import past events, fighters = update all fighter profiles now, quiz = make this week's quiz now, clips = find official highlight clips of recent events now, clips_backfill = build the YouTube index and add clips to ALL past fights (once), clips_debug = print why clips are missing (changes nothing), boxing = refresh boxing cards and champions now"
         default: "full"
         type: choice
-        options: [full, backfill, fighters, quiz, clips, clips_backfill, clips_debug]
+        options: [full, backfill, fighters, quiz, clips, clips_backfill, clips_debug, boxing]
       from_year:
         description: "Backfill: import events from this year onward"
         default: "2024"
@@ -30,8 +30,19 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python sync_ufc.py
+      # Boxing first: quick (a few Wikipedia pages), and it can never stop the
+      # UFC sync below (errors are caught, and the step may fail on its own).
+      - name: boxing
         if: ${{ inputs.mode != 'clips_debug' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python sync_boxing.py
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '17 */2 * * *' && 'full' || 'fightnight') }}
+      - run: python sync_ufc.py
+        if: ${{ inputs.mode != 'clips_debug' && inputs.mode != 'boxing' }}
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}

@@ -1,0 +1,40 @@
+name: Boxing test (branch only)
+# Runs the boxing sync from the "boxing" branch with alerts OFF and saves a
+# report (public data only, no keys) to the "boxing-debug" branch.
+on:
+  push:
+    branches: [boxing]
+    paths: [sync_boxing.py, .github/workflows/boxing-test.yml]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency: ufc-sync
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python sync_boxing.py
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SYNC_MODE: boxing_test
+          BOXING_ALERTS: "0"
+          BOXING_REPORT: /tmp/boxing_report.txt
+      - name: save report
+        run: |
+          [ -f /tmp/boxing_report.txt ] || echo "no report" > /tmp/boxing_report.txt
+          echo "commit ${GITHUB_SHA}" >> /tmp/boxing_report.txt
+          git config user.name "MMAfannx"
+          git config user.email "MMAfannx@users.noreply.github.com"
+          git checkout -q --orphan boxing-debug
+          git rm -rq --cached .
+          cp /tmp/boxing_report.txt boxing_report.txt
+          git add boxing_report.txt
+          git commit -qm "boxing test report"
+          git push -qf origin boxing-debug
