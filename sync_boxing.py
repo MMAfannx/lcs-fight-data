@@ -861,6 +861,7 @@ def profile_clips(profiles, rows, state):
                 if best is None or score > best[0]:
                     best = (score, r)
             if best:
+                f["_who"] = p["name"]
                 found.append((f, best[1]))
     cache = state.setdefault("ytOk", {})
     todo = sorted({r["v"] for _, r in found if r["v"] not in cache})
@@ -870,6 +871,10 @@ def profile_clips(profiles, rows, state):
         if cache.get(r["v"], True):
             f["c"] = {"url": f"https://www.youtube.com/watch?v={r['v']}", "ch": r["ch"]}
             n += 1
+            if n <= 40:
+                say(f"  {f.pop('_who', '')} {f.get('d', '')[:4]} vs {f['o']} -> {r['ch']}: {r['t'][:80]}")
+    for f, _ in found:
+        f.pop("_who", None)
     if len(cache) > 6000:
         state["ytOk"] = dict(list(cache.items())[-4000:])
     say(f"profile clips: {n} fights on legends' and champions' profiles have an official clip")
