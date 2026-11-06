@@ -275,7 +275,7 @@ def sync_champions(db, state, force=False):
         for b in d["belts"]:
             i = info.get(b["title"], {}) if b["title"] else {}
             row = {"org": b["org"], "name": b["name"], "nameAr": i.get("ar", ""),
-                   "nat": b["nat"] or i.get("nat", ""), "record": b["record"]}
+                   "nat": b["nat"] or i.get("nat", ""), "record": b["record"], "wiki": b["title"]}
             if i.get("photo"):
                 row["photo"] = i["photo"]
             rows.append(row)
@@ -287,7 +287,7 @@ def sync_champions(db, state, force=False):
             "divisions": out,
             "updated": now_utc(),
             "source": "Wikipedia (CC BY-SA 4.0)",
-        })
+        }, merge=True)  # legends + profiles live in the same document
     state["champsAt"] = now_utc().isoformat()
     # Who holds what, used to spot title fights on cards.
     state["champTitles"] = {b["title"]: b["name"] for d in divisions for b in d["belts"] if b["title"]}
@@ -610,7 +610,9 @@ def past_cards(state, force=False):
     bouts = {}
     for title, name in sorted(champs.items()):
         html = ufc.fetch_page_html(title)
-        for r in record_rows(html)[:6]:  # newest first on Wikipedia
+        rows = record_rows(html)
+        _champ_rows[title] = (name, rows)
+        for r in rows[:6]:  # newest first on Wikipedia
             if not r["date"] or r["date"] < since or r["date"].date() >= today:
                 continue
             fid = bout_id(name, r["opp"])
@@ -665,6 +667,106 @@ def past_cards(state, force=False):
                       "nameAr": name_ar, "start": start, "location": group[0]["location"], "fights": fights})
     say(f"past results: {len(bouts)} champion fights in the last {PAST_DAYS} days, {len(cards)} cards")
     return cards
+
+
+_champ_rows = {}  # Wikipedia title -> (name, record rows), filled by past_cards
+
+
+# ---------------------------------------------------------------- legends + profiles
+
+# All-time greats (English Wikipedia titles), in the order they are shown.
+LEGENDS = [
+    "Muhammad Ali", "Mike Tyson", "Floyd Mayweather Jr.", "Manny Pacquiao", "Naseem Hamed",
+    "Sugar Ray Robinson", "Joe Louis", "Rocky Marciano", "Sugar Ray Leonard", "Marvin Hagler",
+    "Thomas Hearns", "Roberto Durán", "Julio César Chávez", "Oscar De La Hoya", "Lennox Lewis",
+    "Evander Holyfield", "Larry Holmes", "George Foreman", "Joe Frazier", "Bernard Hopkins",
+    "Roy Jones Jr.", "Pernell Whitaker", "Wladimir Klitschko", "Vitali Klitschko", "Joe Calzaghe",
+    "Andre Ward", "Juan Manuel Márquez", "Marco Antonio Barrera", "Érik Morales", "Carlos Monzón",
+    "Alexis Argüello", "Salvador Sánchez", "Henry Armstrong", "Jack Dempsey", "Jack Johnson (boxer)",
+    "Archie Moore", "Ricardo López (boxer)", "Gennady Golovkin", "Vasiliy Lomachenko", "Tyson Fury",
+]
+LEGENDS_EVERY = timedelta(days=7)
+MAX_FIGHTS = 40  # per legend profile; champions keep 25 (some old-time greats had 200 fights: one document holds 1 MB)
+
+
+def _short_fight(r):
+    res = r["result"]
+    code = "W" if res.startswith("win") else "L" if res.startswith("loss") else "D" if res.startswith("draw") else "NC"
+    orgs, _ = _titles_in(r["notes"])
+    row = {"d": r["date"].date().isoformat() if r["date"] else "", "o": r["opp"][:40], "r": code,
+           "m": _method_text(r["type"], r["round"]), "loc": r["location"][:48]}
+    if orgs or re.search(r"title|championship", r["notes"] or "", re.I):
+        row["n"] = r["notes"][:90]
+    return row
+
+
+def _pick_fights(rows, limit):
+    """Newest first: every title fight, loss and draw, plus the latest five,
+    filled up with the other fights in order, at most `limit` (the full list
+    is on Wikipedia)."""
+    important = [r for i, r in enumerate(rows)
+                 if i < 5 or not r["result"].startswith("win")
+                 or re.search(r"title|championship", r["notes"] or "", re.I)]
+    if len(important) >= limit:
+        return important[:limit]
+    chosen, extra, out = {id(r) for r in important}, limit - len(important), []
+    for r in rows:
+        if id(r) in chosen:
+            out.append(r)
+        elif extra > 0:
+            out.append(r)
+            extra -= 1
+    return out
+
+
+def profile(title, name, rows, info, limit=MAX_FIGHTS):
+    wins = sum(1 for r in rows if r["result"].startswith("win"))
+    losses = sum(1 for r in rows if r["result"].startswith("loss"))
+    draws = sum(1 for r in rows if r["result"].startswith("draw"))
+    kos = sum(1 for r in rows if r["result"].startswith("win") and re.sub(r"[^A-Z]", "", r["type"]) in ("KO", "TKO", "RTD"))
+    years = sorted(r["date"].year for r in rows if r["date"])
+    i = info.get(title, {})
+    p = {"id": boxer_id(name), "wiki": title, "name": name, "nameAr": i.get("ar", ""), "nat": i.get("nat", ""),
+         "record": f"{wins}-{losses}" + (f"-{draws}" if draws else ""), "ko": kos,
+         "years": f"{years[0]}–{years[-1]}" if years else "", "total": len(rows),
+         "fights": [_short_fight(r) for r in _pick_fights(rows, limit)]}
+    if i.get("photo"):
+        p["photo"] = i["photo"]
+    return p
+
+
+def sync_profiles(db, state, force=False):
+    """Legends (weekly) and current champions' profiles (with the past
+    results run), saved in meta/boxingChamps next to the champions."""
+    if db is None:
+        return
+    ref = db.collection("meta").document("boxingChamps")
+    update = {}
+    last = _as_dt(state.get("legendsAt"))
+    if force or not last or now_utc() - last > LEGENDS_EVERY:
+        info = people_info(LEGENDS, state)
+        legends = []
+        for title in LEGENDS:
+            rows = record_rows(ufc.fetch_page_html(title))
+            if len(rows) < 5:
+                say(f"legend skipped (no record table found): {title}")
+                continue
+            name = re.sub(r"\s*\(.*?\)", "", title)
+            legends.append(profile(title, name, rows, info))
+            time.sleep(0.5)
+        if len(legends) >= 20:
+            update["legends"] = legends
+            state["legendsAt"] = now_utc().isoformat()
+        say(f"legends: {len(legends)} profiles")
+        for lg in legends[:3]:
+            say(f"  {lg['name']} ({lg['nameAr']}) {lg['record']}, {lg['ko']} KO, {lg['years']}, {len(lg['fights'])} fights kept")
+    if _champ_rows:
+        info = people_info(list(_champ_rows), state)
+        update["profiles"] = {boxer_id(name): profile(title, name, rows, info, 25)
+                              for title, (name, rows) in _champ_rows.items() if rows}
+        say(f"champion profiles: {len(update['profiles'])}")
+    if update:
+        ref.set(update, merge=True)
 
 
 def add_past(cards, past):
@@ -817,11 +919,12 @@ def add_clips(db, cards, state, force=False):
         b_ar = ufc._ar_norm(last_name(f.get("fighterBAr") or "")).replace(" ", "")
         best = []
         for r in rows:
-            low = r["t"].lower()
+            title = re.sub(r"#\S+", " ", r["t"])  # hashtags like #garciabenn name the event, not the fight
+            low = title.lower()
             # "X knocks out Y: Garcia vs Benn" names the fight first and the
             # event after the colon: then the names must be in the first part.
-            parts = re.split(r"[:|]", r["t"])
-            head = parts[0] if len(parts) > 1 and any(w in f" {parts[0].lower()} " for w in FIGHT_WORDS) else r["t"]
+            parts = re.split(r"[:|]", title)
+            head = parts[0] if len(parts) > 1 and any(w in f" {parts[0].lower()} " for w in FIGHT_WORDS) else title
             letters = ufc.norm(head)
             when = _as_dt(r["at"])
             if not when or not (day - timedelta(hours=12) <= when <= day + timedelta(days=5)):
@@ -973,6 +1076,7 @@ def main():
     cards = merge_cards(old, build_cards(bouts, state, champs)) if bouts is not None else \
         merge_cards(old, [c for c in old if (_as_dt(c.get("start")) or now_utc()) > now_utc()])
     cards = add_past(cards, past_cards(state, force=force))
+    sync_profiles(db, state, force=force)
     new_results = fill_results(cards, state)
     add_clips(db, cards, state, force=force)
     send_alerts(cards, new_results, state)
