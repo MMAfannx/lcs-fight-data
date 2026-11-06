@@ -39,7 +39,9 @@ ALERTS = os.environ.get("BOXING_ALERTS", "1") != "0"  # test runs send nothing
 
 ODDS_EVERY = timedelta(hours=6)       # schedule check (free plan: 500 credits/month)
 CHAMPS_EVERY = timedelta(hours=24)    # champions list
-KEEP_PAST = timedelta(days=45)        # past cards kept for the Results tab
+KEEP_PAST = timedelta(days=130)       # past cards kept for the Results tab
+PAST_DAYS = 120                       # champions' recent fights read into Results
+PAST_EVERY = timedelta(hours=24)
 RESULT_WINDOW = timedelta(hours=60)   # look for results until 60 h after the card starts
 SAME_CARD_GAP = timedelta(hours=3)    # bouts closer than this belong to one card
 NAME_LOOKUPS_PER_RUN = 80
@@ -288,6 +290,7 @@ def sync_champions(db, state, force=False):
         })
     state["champsAt"] = now_utc().isoformat()
     # Who holds what, used to spot title fights on cards.
+    state["champTitles"] = {b["title"]: b["name"] for d in divisions for b in d["belts"] if b["title"]}
     state["champs"] = [{"name": d["name"], "holders": {b["name"]: [] for b in d["belts"] if b["name"]}}
                        for d in out]
     for d, src in zip(state["champs"], out):
@@ -475,35 +478,51 @@ def _parse_day(text):
     return None
 
 
-def record_result(html, opponent, day):
-    """From a boxer's "Professional boxing record" table: (result, type,
-    round, time) of the bout against this opponent around this day."""
-    soup = BeautifulSoup(html, "html.parser")
-    opp_key = ufc.norm(last_name(opponent))
+def record_rows(html):
+    """Rows of a boxer's "Professional boxing record" table:
+    [{"result", "opp", "oppTitle", "type", "round", "date", "location", "notes"}]."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    out = []
     for table in soup.find_all("table", class_="wikitable"):
         grid = ufc.expand_table(table)
         if not grid:
             continue
         head = [ufc.clean(c).lower() for c in grid[0]]
+
         def col(word):
             return next((i for i, h in enumerate(head) if word in h), None)
-        c_res, c_opp, c_type, c_round, c_date = col("result"), col("opponent"), col("type"), col("round"), col("date")
-        if None in (c_res, c_opp, c_date):
+        c = {k: col(k) for k in ("result", "opponent", "type", "round", "date", "location", "notes")}
+        if None in (c["result"], c["opponent"], c["date"]):
             continue
+
+        def cell(row, key):
+            i = c[key]
+            return row[i] if i is not None and i < len(row) else None
         for row in grid[1:]:
-            if len(row) <= max(c_res, c_opp, c_date):
+            result = ufc.clean(cell(row, "result")).lower()
+            if not result.startswith(("win", "loss", "draw", "nc", "no contest")):
                 continue
-            opp = ufc.clean(row[c_opp])
-            if opp_key not in ufc.norm(opp):
-                continue
-            when = _parse_day(ufc.clean(row[c_date]))
-            if not when or abs((when.date() - day.date()).days) > 2:
-                continue
-            result = ufc.clean(row[c_res]).lower()
-            kind = ufc.clean(row[c_type]).upper() if c_type is not None and c_type < len(row) else ""
-            rnd = ufc.clean(row[c_round]) if c_round is not None and c_round < len(row) else ""
-            if result.startswith(("win", "loss", "draw", "nc", "no contest")):
-                return result, kind, rnd
+            opp_cell = cell(row, "opponent")
+            shown, title = _person_link(opp_cell) if opp_cell is not None else (None, None)
+            out.append({
+                "result": result,
+                "opp": shown or ufc.clean(opp_cell),
+                "oppTitle": title or "",
+                "type": ufc.clean(cell(row, "type")).upper(),
+                "round": ufc.clean(cell(row, "round")),
+                "date": _parse_day(ufc.clean(cell(row, "date"))),
+                "location": ufc.clean(cell(row, "location")),
+                "notes": ufc.clean(cell(row, "notes")),
+            })
+    return out
+
+
+def record_result(html, opponent, day):
+    """(result, type, round) of the bout against this opponent around this day."""
+    opp_key = ufc.norm(last_name(opponent))
+    for r in record_rows(html):
+        if opp_key in ufc.norm(r["opp"]) and r["date"] and abs((r["date"].date() - day.date()).days) <= 2:
+            return r["result"], r["type"], r["round"]
     return None
 
 
@@ -554,6 +573,266 @@ def fill_results(cards, state):
                 done.append((c, f))
                 break
     return done
+
+
+# ---------------------------------------------------------------- past results (Wikipedia)
+
+def _titles_in(notes):
+    """Belts named in a record row's notes ("Retained WBA, WBC and IBF heavyweight titles")."""
+    if not re.search(r"title|belt|championship", notes or "", re.I):
+        return [], ""
+    orgs = [o for o in ORGS if re.search(r"\b" + re.escape(o) + r"\b", notes)]
+    m = re.findall(r"((?:super |light |junior |mini |minimum|bridger|cruiser|heavy|middle|welter|feather|bantam|fly|straw)?[a-z]*weight)",
+                   notes.lower())
+    division = m[-1].strip().capitalize() if m else ""
+    return orgs, division
+
+
+def _scheduled(rnd):
+    m = re.search(r"\((\d+)\)", rnd or "")
+    if m:
+        return int(m.group(1))
+    m = re.match(r"\s*(\d+)\s*$", rnd or "")
+    return int(m.group(1)) if m else 0
+
+
+def past_cards(state, force=False):
+    """The current world champions' fights of the last PAST_DAYS days, as
+    finished cards (one per date + place), for the Results tab."""
+    last = _as_dt(state.get("pastAt"))
+    if not force and last and now_utc() - last < PAST_EVERY:
+        return None
+    champs = state.get("champTitles") or {}
+    if not champs:
+        return None
+    since = now_utc() - timedelta(days=PAST_DAYS)
+    today = now_utc().date()
+    bouts = {}
+    for title, name in sorted(champs.items()):
+        html = ufc.fetch_page_html(title)
+        for r in record_rows(html)[:6]:  # newest first on Wikipedia
+            if not r["date"] or r["date"] < since or r["date"].date() >= today:
+                continue
+            fid = bout_id(name, r["opp"])
+            if fid in bouts:
+                continue
+            if r["result"].startswith("win"):
+                winner = name
+            elif r["result"].startswith("loss"):
+                winner = r["opp"]
+            elif r["result"].startswith("draw"):
+                winner = "Draw"
+            else:
+                winner = "No contest"
+            orgs, division = _titles_in(r["notes"])
+            bouts[fid] = {"a": name, "aTitle": title, "b": r["opp"], "bTitle": r["oppTitle"],
+                          "date": r["date"], "location": r["location"], "winner": winner,
+                          "method": _method_text(r["type"], r["round"]), "titles": orgs,
+                          "division": division, "rounds": _scheduled(r["round"])}
+        time.sleep(0.5)
+    state["pastAt"] = now_utc().isoformat()
+    info = people_info([t for b in bouts.values() for t in (b["aTitle"], b["bTitle"]) if t], state)
+    groups = {}
+    for b in bouts.values():
+        groups.setdefault((b["date"].date(), ufc.norm(b["location"])), []).append(b)
+    cards = []
+    for (day, _), group in groups.items():
+        group.sort(key=lambda b: (len(b["titles"]), b["rounds"]), reverse=True)
+        fights = []
+        for i, b in enumerate(group):
+            f = {"id": bout_id(b["a"], b["b"]), "fighterA": b["a"], "fighterB": b["b"], "isMain": i == 0,
+                 "winner": b["winner"], "method": b["method"], "card": "", "division": b["division"]}
+            if b["titles"]:
+                f["titles"] = b["titles"]
+            if b["rounds"]:
+                f["rounds"] = b["rounds"]
+            for side, key in (("A", "aTitle"), ("B", "bTitle")):
+                i2 = info.get(b[key], {}) if b[key] else {}
+                f[f"fighter{side}Ar"] = i2.get("ar", "")
+                f[f"fighter{side}Nat"] = i2.get("nat", "")
+                f[f"fighter{side}Arab"] = bool(i2.get("arab"))
+                f[f"fighter{side}Id"] = boxer_id(f[f"fighter{side}"])
+                if i2.get("photo"):
+                    f[f"photo{side}"] = i2["photo"]
+            fights.append(f)
+        m = fights[0]
+        name_ar = ""
+        if m.get("fighterAAr") and m.get("fighterBAr"):
+            name_ar = f"ملاكمة: {last_name(m['fighterAAr'])} ضد {last_name(m['fighterBAr'])}"
+        start = datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc)
+        cards.append({"id": "bx_" + day.strftime("%Y%m%d") + "_" + hashlib.sha1(m["id"].encode()).hexdigest()[:6],
+                      "name": f"Boxing: {last_name(m['fighterA'])} vs. {last_name(m['fighterB'])}",
+                      "nameAr": name_ar, "start": start, "location": group[0]["location"], "fights": fights})
+    say(f"past results: {len(bouts)} champion fights in the last {PAST_DAYS} days, {len(cards)} cards")
+    return cards
+
+
+def add_past(cards, past):
+    """Adds past cards whose bouts aren't on our cards yet."""
+    known = {f["id"] for c in cards for f in c.get("fights") or []}
+    for c in past or []:
+        if not any(f["id"] in known for f in c["fights"]):
+            cards.append(c)
+    cards.sort(key=lambda c: _as_dt(c["start"]))
+    return cards
+
+
+# ---------------------------------------------------------------- official clips (YouTube)
+
+# Official boxing channels. Each is checked through the YouTube API (the
+# channel's own name must contain the word, and it must be big), else skipped.
+BOXING_YT = [
+    ("@DAZNBoxing", "dazn"), ("@toprank", "top rank"), ("@MatchroomBoxing", "matchroom"),
+    ("@QueensberryPromotions", "queensberry"), ("@GoldenBoyBoxing", "golden boy"),
+    ("@PremierBoxingChampions", "premier boxing"), ("@ZuffaBoxing", "zuffa"),
+    ("@RingMagazine", "ring"), ("@RiyadhSeason", "riyadh"),
+]
+YT_MIN_SUBS = 200_000
+YT_EVERY = timedelta(hours=3)
+CLIP_SKIP = ("press conference", "presser", "weigh", "face off", "faceoff", "face-off", "preview", "interview",
+             "media day", "workout", "countdown", "prediction", "breakdown", "reaction", "callout", "calls out",
+             "build up", "build-up", "embedded", "podcast", "live stream", "watch party", "trailer", "promo",
+             "ringwalk", "ring walk", "walkout", "arrival", "fight week", "behind the scenes", "every ", "top ",
+             "best of", "compilation", "full card", "full event")
+CLIP_GOOD = (("full fight", 4), ("highlight", 3), ("knockout", 2), ("ko", 1), ("tko", 1), ("stoppage", 1))
+
+
+def _yt_channels(state):
+    """Verified official channels: [{"id", "uploads", "title"}] (cached a week)."""
+    cache = state.get("ytBoxing") or {}
+    at = _as_dt(cache.get("at"))
+    if at and now_utc() - at < timedelta(days=7):
+        return cache.get("channels") or []
+    found = []
+    for handle, word in BOXING_YT:
+        try:
+            items = ufc._yt_get("channels", {"part": "snippet,contentDetails,statistics",
+                                             "forHandle": handle}).get("items") or []
+        except Exception as e:
+            say(f"clips: {handle} lookup failed ({type(e).__name__})")
+            continue
+        if not items:
+            say(f"clips: {handle} not found, skipped")
+            continue
+        c = items[0]
+        title = (c.get("snippet") or {}).get("title", "")
+        subs = ufc._yt_subs(c)
+        if word not in title.lower() or subs < YT_MIN_SUBS:
+            say(f"clips: {handle} = '{title}' ({subs} subscribers) not accepted")
+            continue
+        found.append({"id": c["id"], "uploads": ufc._yt_uploads(c), "title": title})
+        say(f"clips: verified {title} ({subs // 1000}k subscribers)")
+    state["ytBoxing"] = {"at": now_utc().isoformat(), "channels": found}
+    return found
+
+
+def _yt_index(db, state, force=False):
+    """Recent uploads of the official channels (meta/boxingYt, bot only)."""
+    ref = db.collection("meta").document("boxingYt") if db else None
+    saved = (ref.get().to_dict() or {}) if ref else {}
+    rows = saved.get("rows") or []
+    at = _as_dt(saved.get("at"))
+    if not force and at and now_utc() - at < YT_EVERY:
+        return rows
+    seen = {r["v"] for r in rows}
+    for ch in _yt_channels(state):
+        pages = 1 if rows else 6  # the first time, go back a few hundred videos
+        token = None
+        for _ in range(pages):
+            params = {"part": "snippet", "playlistId": ch["uploads"], "maxResults": 50}
+            if token:
+                params["pageToken"] = token
+            try:
+                data = ufc._yt_get("playlistItems", params)
+            except Exception as e:
+                say(f"clips: {ch['title']} uploads failed ({type(e).__name__})")
+                break
+            for it in data.get("items") or []:
+                sn = it.get("snippet") or {}
+                vid = (sn.get("resourceId") or {}).get("videoId")
+                if vid and vid not in seen:
+                    seen.add(vid)
+                    rows.append({"v": vid, "t": sn.get("title", ""), "at": sn.get("publishedAt", ""),
+                                 "ch": ch["title"]})
+            token = data.get("nextPageToken")
+            if not token:
+                break
+    cutoff = now_utc() - timedelta(days=PAST_DAYS + 10)
+    rows = [r for r in rows if (_as_dt(r["at"]) or now_utc()) > cutoff][-4000:]
+    if ref is not None:
+        ref.set({"rows": rows, "at": now_utc()})
+    say(f"clips: {len(rows)} official boxing videos indexed")
+    return rows
+
+
+def _plays_in_arab_countries(ids):
+    ok = {}
+    for i in range(0, len(ids), 50):
+        try:
+            items = ufc._yt_get("videos", {"part": "contentDetails", "id": ",".join(ids[i:i + 50])}).get("items") or []
+        except Exception:
+            items = []
+        for it in items:
+            rr = (it.get("contentDetails") or {}).get("regionRestriction") or {}
+            allowed, blocked = set(rr.get("allowed") or []), set(rr.get("blocked") or [])
+            ok[it["id"]] = (not allowed or ufc.YT_MUST_PLAY_IN <= allowed) and not (blocked & ufc.YT_MUST_PLAY_IN)
+    return ok
+
+
+def add_clips(db, cards, state, force=False):
+    """Official YouTube clips for finished boxing fights (both last names in
+    the title, posted from the fight day to 5 days after)."""
+    if not ufc.YT_KEY:
+        say("clips: no YOUTUBE_API_KEY, skipped")
+        return
+    todo = [(c, f) for c in cards for f in c.get("fights") or []
+            if f.get("winner") and not f.get("clips")]
+    if not todo:
+        return
+    try:
+        rows = _yt_index(db, state, force=force)
+    except Exception as e:
+        say(f"clips: index failed ({type(e).__name__})")
+        return
+    found = {}
+    for c, f in todo:
+        day = _as_dt(c["start"])
+        a, b = ufc.norm(last_name(f["fighterA"])), ufc.norm(last_name(f["fighterB"]))
+        if len(a) < 3 or len(b) < 3:
+            continue
+        best = []
+        for r in rows:
+            low = r["t"].lower()
+            letters = ufc.norm(r["t"])
+            when = _as_dt(r["at"])
+            if not when or not (day - timedelta(hours=12) <= when <= day + timedelta(days=5)):
+                continue
+            if a not in letters or b not in letters or any(w in low for w in CLIP_SKIP):
+                continue
+            score = sum(p for w, p in CLIP_GOOD if w in low)
+            best.append((score, when, r))
+        best.sort(key=lambda x: (-x[0], x[1]))
+        if best:
+            found[f["id"]] = (f, [x[2] for x in best[:6]])
+    if not found:
+        say("clips: no new official clips")
+        return
+    plays = _plays_in_arab_countries(sorted({r["v"] for _, rs in found.values() for r in rs}))
+    n = 0
+    for f, rs in found.values():
+        clips, used = [], set()
+        for r in rs:
+            if plays.get(r["v"], True) and r["ch"] not in used:
+                used.add(r["ch"])
+                clips.append({"url": f"https://www.youtube.com/watch?v={r['v']}", "source": "youtube",
+                              "at": r["at"], "channel": r["ch"]})
+            if len(clips) == 3:
+                break
+        if clips:
+            f["clip"], f["clips"] = clips[0], clips
+            n += 1
+            say(f"clip: {f['fighterA']} vs {f['fighterB']} -> {clips[0]['channel']}: {rs[0]['t'][:70]}")
+    say(f"clips: {n} fight(s) got an official clip")
 
 
 # ---------------------------------------------------------------- alerts
@@ -666,7 +945,9 @@ def main():
     bouts = odds_bouts(state, force=force)
     cards = merge_cards(old, build_cards(bouts, state, champs)) if bouts is not None else \
         merge_cards(old, [c for c in old if (_as_dt(c.get("start")) or now_utc()) > now_utc()])
+    cards = add_past(cards, past_cards(state, force=force))
     new_results = fill_results(cards, state)
+    add_clips(db, cards, state, force=force)
     send_alerts(cards, new_results, state)
 
     say(f"cards saved: {len(cards)}")

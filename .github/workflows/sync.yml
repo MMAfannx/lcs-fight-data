@@ -40,6 +40,7 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '17 */2 * * *' && 'full' || 'fightnight') }}
       - run: python sync_ufc.py
         if: ${{ inputs.mode != 'clips_debug' && inputs.mode != 'boxing' }}
