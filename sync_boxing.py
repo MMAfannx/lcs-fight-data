@@ -693,8 +693,10 @@ CLIP_SKIP = ("press conference", "presser", "weigh", "face off", "faceoff", "fac
              "media day", "workout", "countdown", "prediction", "breakdown", "reaction", "callout", "calls out",
              "build up", "build-up", "embedded", "podcast", "live stream", "watch party", "trailer", "promo",
              "ringwalk", "ring walk", "walkout", "arrival", "fight week", "behind the scenes", "every ", "top ",
-             "best of", "compilation", "full card", "full event")
-CLIP_GOOD = (("full fight", 4), ("highlight", 3), ("knockout", 2), ("ko", 1), ("tko", 1), ("stoppage", 1))
+             "best of", "compilation", "full card", "full event", "watch along", "watchalong", "watch-along",
+             "live", "stream", "react", "analysis")
+CLIP_GOOD = (("full fight", 4), ("highlight", 3), ("knockout", 2), ("knocks out", 2), ("defeats", 1),
+             ("stops", 1), ("stoppage", 1), ("tko", 1), ("ko!", 1), (" ko ", 1), ("buzzer beater", 1))
 
 
 def _yt_channels(state):
@@ -785,8 +787,9 @@ def add_clips(db, cards, state, force=False):
     if not ufc.YT_KEY:
         say("clips: no YOUTUBE_API_KEY, skipped")
         return
+    # Manual/test runs re-check every saved clip against today's rules.
     todo = [(c, f) for c in cards for f in c.get("fights") or []
-            if f.get("winner") and not f.get("clips")]
+            if f.get("winner") and (force or not f.get("clips"))]
     if not todo:
         return
     try:
@@ -809,11 +812,16 @@ def add_clips(db, cards, state, force=False):
                 continue
             if a not in letters or b not in letters or any(w in low for w in CLIP_SKIP):
                 continue
-            score = sum(p for w, p in CLIP_GOOD if w in low)
-            best.append((score, when, r))
+            score = sum(p for w, p in CLIP_GOOD if w in f" {low} ")
+            if score > 0:  # must say highlights / full fight / KO...
+                best.append((score, when, r))
         best.sort(key=lambda x: (-x[0], x[1]))
         if best:
             found[f["id"]] = (f, [x[2] for x in best[:6]])
+        elif force and f.get("clips"):
+            f.pop("clip", None)
+            f.pop("clips", None)
+            say(f"clip removed (no longer matches): {f['fighterA']} vs {f['fighterB']}")
     if not found:
         say("clips: no new official clips")
         return
@@ -825,7 +833,7 @@ def add_clips(db, cards, state, force=False):
             if plays.get(r["v"], True) and r["ch"] not in used:
                 used.add(r["ch"])
                 clips.append({"url": f"https://www.youtube.com/watch?v={r['v']}", "source": "youtube",
-                              "at": r["at"], "channel": r["ch"]})
+                              "at": r["at"], "channel": r["ch"], "title": r["t"][:120]})
             if len(clips) == 3:
                 break
         if clips:
