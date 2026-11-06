@@ -567,6 +567,13 @@ def _nm(f, side, ar):
     return (f.get(f"fighter{side}Ar") if ar else "") or f[f"fighter{side}"]
 
 
+def big_card(main):
+    """Alerts to everyone only for big nights: a title fight, or a main event
+    whose two boxers both have Arabic names on Wikipedia (known to our fans).
+    Bell fans get every alert of the fights they chose either way."""
+    return bool(main.get("titles")) or bool(main.get("fighterAAr") and main.get("fighterBAr"))
+
+
 def send_alerts(cards, new_results, state):
     if not ALERTS:
         say(f"alerts off (test run): {len(new_results)} result alert(s) not sent")
@@ -579,7 +586,7 @@ def send_alerts(cards, new_results, state):
         if not start or not main:
             continue
         key = f"start:{c['id']}"
-        if key not in sent and start - timedelta(minutes=10) <= now <= start + timedelta(hours=3):
+        if key not in sent and big_card(main) and start - timedelta(minutes=10) <= now <= start + timedelta(hours=3):
             try:
                 _send_topic("ar", "بدأت أمسية الملاكمة",
                             f"{_nm(main, 'A', True)} ضد {_nm(main, 'B', True)} · النتائج في LCS FIGHT")
@@ -606,7 +613,7 @@ def send_alerts(cards, new_results, state):
         try:
             ufc.send_fight_alert(f["id"], "نتيجة نزال الملاكمة", f"{ar}{' · ' + how_ar if how_ar else ''}",
                                  "Boxing result", f"{en}{' · ' + how_en if how_en else ''}")
-            if f.get("isMain"):
+            if f.get("isMain") and big_card(f):
                 _send_topic("ar", "نتيجة النزال الرئيسي", f"{ar}{' · ' + how_ar if how_ar else ''}")
                 _send_topic("en", "Main event result", f"{en}{' · ' + how_en if how_en else ''}")
             # The bout above it on the card is next (bell fans only).
