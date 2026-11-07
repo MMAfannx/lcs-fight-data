@@ -932,7 +932,7 @@ def sync_profiles(db, state, force=False):
     ref = db.collection("meta").document("boxingChamps")
     update = {}
     last = _as_dt(state.get("legendsAt"))
-    if force or not last or now_utc() - last > LEGENDS_EVERY:
+    if MODE != "fightnight" and (force or not last or now_utc() - last > LEGENDS_EVERY):
         info = people_info(LEGENDS, state)
         legends = []
         for title in LEGENDS:
@@ -962,6 +962,11 @@ def sync_profiles(db, state, force=False):
                               for title, (name, rows) in _champ_rows.items() if rows}
         say(f"champion profiles: {len(update['profiles'])}")
     # Clips for the profiles: new or saved profiles, against the full archive.
+    # Fight-night runs stay quick (they share the job with the UFC live alerts).
+    if MODE == "fightnight":
+        if update:
+            ref.set(update, merge=True)
+        return
     try:
         rows = yt_full_index(db, state)
     except Exception as e:
@@ -1285,17 +1290,19 @@ def main():
     state = (state_ref.get().to_dict() or {}) if state_ref else {}
     old = (cards_ref.get().to_dict() or {}).get("cards", []) if cards_ref else []
 
+    started = time.time()
     champs = sync_champions(db, state, force=force)
     bouts = odds_bouts(state, force=force)
     cards = merge_cards(old, build_cards(bouts, state, champs)) if bouts is not None else \
         merge_cards(old, [c for c in old if (_as_dt(c.get("start")) or now_utc()) > now_utc()])
-    cards = add_past(cards, past_cards(state, force=force))
+    if MODE != "fightnight":  # daily reads of the champions' pages: not during fight nights
+        cards = add_past(cards, past_cards(state, force=force))
     sync_profiles(db, state, force=force)
     new_results = fill_results(cards, state)
     add_clips(db, cards, state, force=force)
     send_alerts(cards, new_results, state)
 
-    say(f"cards saved: {len(cards)}")
+    say(f"cards saved: {len(cards)} ({time.time() - started:.0f} s)")
     for c in cards[:6]:
         m = c["fights"][0] if c["fights"] else {}
         say(f"  {_as_dt(c['start']):%Y-%m-%d %H:%M} UTC  {c['name']}  ({len(c['fights'])} bouts)"
