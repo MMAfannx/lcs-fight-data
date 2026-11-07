@@ -1,0 +1,81 @@
+champions: 18 weight classes, 69 belts held
+  Heavyweight: WBA Murat Gassiev, WBC Agit Kabayel, IBF Filip Hrgović, WBO Daniel Dubois, The Ring Oleksandr Usyk
+  Bridgerweight: WBC Ryad Merhy
+  Cruiserweight: WBA David Benavidez, WBC Michał Cieślak, IBF vacant, WBO David Benavidez, The Ring Jai Opetaia
+Odds API credits left this month: 500
+Odds API credits left this month: 500
+schedule: 57 upcoming boxing bouts listed
+  skipped small card: Kenichi Ogawa vs Jae Woo Lee (1 bout(s))
+  skipped small card: Jhon Orobio vs Hendri Cedeno (2 bout(s))
+  skipped small card: Diego Pacheco vs Darius Fulghum (1 bout(s))
+  skipped small card: Lauren Price vs Michaela Kotaskova (1 bout(s))
+past results: 24 champion fights in the last 120 days, 18 cards
+legends: 40 profiles
+  Muhammad Ali (محمد علي) 56-5, 37 KO, 1960–1981, 40 fights kept
+  Mike Tyson (مايك تايسون) 50-7, 44 KO, 1985–2024, 40 fights kept
+  Floyd Mayweather Jr. (فلويد مايويذر جونيور) 50-0, 27 KO, 1996–2017, 40 fights kept
+champion profiles: 53
+archive: 29883 official videos (5974 new, 120 pages read, 7 channel(s) still loading)
+  Muhammad Ali 1976 vs Richard Dunn -> Top Rank Boxing: MUHAMMAD ALI vs RICHARD DUNN | FULL FIGHT | MAY 24, 1976
+  Mike Tyson 1990 vs Henry Tillman -> Top Rank Boxing: Mike Tyson With A Vicious Knockout of Henry Tillman | HAPPY BIRTHDAY MIKE TYSON
+  Floyd Mayweather Jr. 2015 vs Manny Pacquiao -> Top Rank Boxing: Floyd Mayweather vs Manny Pacquiao | Full Fight NO COMMENTARY
+  Floyd Mayweather Jr. 2013 vs Canelo Álvarez -> DAZN Boxing: FULL FIGHT | Floyd Mayweather vs. Canelo Álvarez
+  Floyd Mayweather Jr. 2013 vs Robert Guerrero -> Golden Boy Boxing: Throwback | Mayweather vs Robert Guerrero! Floyd Struggles With Ghost's Boxing A
+  Floyd Mayweather Jr. 2012 vs Miguel Cotto -> DAZN Boxing: FULL FIGHT | Floyd Mayweather vs. Miguel Cotto (DAZN REWIND)
+  Floyd Mayweather Jr. 2010 vs Shane Mosley -> DAZN Boxing: FULL FIGHT | Floyd Mayweather Jr. vs. Shane Mosley
+  Floyd Mayweather Jr. 2009 vs Juan Manuel Márquez -> DAZN Boxing: FULL FIGHT | Floyd Mayweather vs. Juan Manuel Marquez (DAZN REWIND)
+  Floyd Mayweather Jr. 2007 vs Ricky Hatton -> DAZN Boxing: FULL FIGHT | Floyd Mayweather Jr. vs. Ricky Hatton
+  Floyd Mayweather Jr. 2007 vs Oscar De La Hoya -> DAZN Boxing: FULL FIGHT | Oscar De La Hoya vs. Floyd Mayweather (DAZN REWIND)
+  Floyd Mayweather Jr. 2000 vs Emanuel Augustus -> Top Rank Boxing: Floyd Mayweather vs Emanuel Augustus | FULL FIGHT
+  Manny Pacquiao 2016 vs Jessie Vargas -> Top Rank Boxing: When Manny Pacquiao Put on a Clinic Against Jessie Vargas | FULL FIGHT
+  Manny Pacquiao 2015 vs Floyd Mayweather Jr. -> Top Rank Boxing: Floyd Mayweather vs Manny Pacquiao | Full Fight NO COMMENTARY
+  Manny Pacquiao 2014 vs Chris Algieri -> Top Rank Boxing: When Manny Pacquiao Put on a Masterclass Against Chris Algieri | FULL FIGHT
+  Manny Pacquiao 2012 vs Juan Manuel Márquez -> Top Rank Boxing: Manny Pacquiao vs Juan Manuel Marquez 4 | NO COMMENTARY FULL FIGHT | SHOCKING KO
+  Manny Pacquiao 2010 vs Joshua Clottey -> Top Rank Boxing: He Tried to Block Everything… But Pacquiao Never Stopped | FULL FIGHT vs Joshua 
+  Manny Pacquiao 2009 vs Miguel Cotto -> Top Rank Boxing: Manny Pacquiao vs. Miguel Cotto | Full Fight
+  Manny Pacquiao 2009 vs Ricky Hatton -> Top Rank Boxing: Manny Pacquiao vs Ricky Hatton | ON THIS DAY FULL FIGHT
+  Manny Pacquiao 2007 vs Marco Antonio Barrera -> DAZN Boxing: FULL FIGHT | Manny Pacquiao vs. Marco Antonio Barrera 2 (DAZN REWIND)
+  Manny Pacquiao 2005 vs Héctor Velázquez -> Top Rank Boxing: Manny Pacquiao vs Héctor Velázquez | Full Fight
+  Naseem Hamed 1999 vs Paul Ingle -> Matchroom Boxing: Prince Naseem Hamed vs Paul Ingle | Full Fight | Matchroom Boxing
+  Naseem Hamed 1997 vs Kevin Kelley -> Frank Warren's Queensberry Promotions: PRINCE NASEEM HAMED v KEVIN KELLEY (FULL FIGHT) | NAZ MAKES EPIC U.S DEBUT! | TH
+  Naseem Hamed 1995 vs Steve Robinson -> Frank Warren's Queensberry Promotions: PRINCE NASEEM HAMED v STEVE ROBINSON (FULL FIGHT) | FIRST WORLD TITLE SHOT | THE
+  Sugar Ray Leonard 1980 vs Roberto Durán -> Top Rank Boxing: Sugar Ray Leonard vs Roberto Duran 1 | The Brawl In Montreal | ON THIS DAY FULL 
+  Sugar Ray Leonard 1980 vs Dave Boy Green -> Top Rank Boxing: The KO Heard Around the World! Sugar Ray Leonard 1980 KO of the Year Nominee ove
+  Sugar Ray Leonard 1979 vs Wilfred Benítez -> Top Rank Boxing: Sugar Ray Leonard vs Wilfred Benitez | Full Fight & Classic Title Showdown
+  Marvin Hagler 1982 vs William Lee -> Top Rank Boxing: Marvin Hagler vs. William "Caveman" Lee Free Fight | DEVASTATING KO FREE FIGHT
+  Thomas Hearns 1981 vs Randy Shields -> Top Rank Boxing: Thomas Hearns vs Randy Shields | FULL FIGHT
+  Roberto Durán 1989 vs Iran Barkley -> Top Rank Boxing: Roberto Duran's Legendary Night Against Iran Barkley | FULL FIGHT
+  Roberto Durán 1980 vs Sugar Ray Leonard -> Top Rank Boxing: Sugar Ray Leonard vs Roberto Duran 1 | The Brawl In Montreal | ON THIS DAY FULL 
+  Oscar De La Hoya 2008 vs Manny Pacquiao -> DAZN Boxing: FULL FIGHT | Oscar De La Hoya vs. Manny Pacquiao (DAZN REWIND)
+  Oscar De La Hoya 2006 vs Ricardo Mayorga -> DAZN Boxing: HIGHLIGHTS | Oscar De La Hoya vs. Ricardo Mayorga
+  Oscar De La Hoya 2004 vs Bernard Hopkins -> DAZN Boxing: FULL FIGHT | Oscar De La Hoya vs. Bernard Hopkins (DAZN REWIND)
+  Oscar De La Hoya 2003 vs Shane Mosley -> Top Rank Boxing: Shane Mosley vs Oscar De La Hoya 2 | Mosley defeats De La Hoya in rematch | ON T
+  Oscar De La Hoya 2003 vs Yori Boy Campas -> Golden Boy Boxing: #otd Oscar De La Hoya defeats Luis Ramon Campas in the back & fourth showdown #b
+  Oscar De La Hoya 2002 vs Fernando Vargas -> Golden Boy Boxing: Throwback | Oscar De La Hoya vs Fernando Vargas! What Side Were You?? A Historic
+  Oscar De La Hoya 2001 vs Javier Castillejo -> Golden Boy Boxing: Oscar De La Hoya VS Javier Castillejo Full Fight
+  Oscar De La Hoya 1999 vs Félix Trinidad -> Golden Boy Boxing: Full Fight | Oscar De La Hoya vs. Félix “Tito” Trinidad | 🥊 THE FIGHT OF THE MIL
+  Oscar De La Hoya 1999 vs Ike Quartey -> Top Rank Boxing: Oscar De La Hoya vs Ike Quartey | FULL FIGHT | FEBRUARY 13, 1999
+  Oscar De La Hoya 1997 vs Héctor Camacho -> DAZN Boxing: FULL FIGHT | Oscar De La Hoya vs. Hector Camacho (DAZN REWIND)
+profile clips: 359 fights on legends' and champions' profiles have an official clip
+clips: 2141 official boxing videos indexed
+clip: William Zepeda vs Lamont Roach Jr. -> Golden Boy Boxing: Lamont Roach Jr. vs. William Zepeda | Highlights
+clip: Jai Opetaia vs Noel Mikaelian -> Zuffa Boxing: Jai Opetaia scores a powerful TKO victory over Noel Mikaelian: Garcia 
+clip: Ryan Garcia vs Conor Benn -> Zuffa Boxing: Ryan Garcia defeats Connor Benn in the 2nd Round❗#garciabenn
+clip: Floyd Schofield vs Lucas Bahdi -> Ring Magazine: Highlights from Floyd Schofield’s victory over Lucas Bahdi to capture 
+clip: Daniel Dubois vs Fabio Wardley -> Ring Magazine: SAVAGE KO! Daniel Dubois vs Fabio Wardley 2 | FIGHT HIGHLIGHTS
+clip: Sebastian Fundora vs Ermal Hadribeaj -> DAZN Boxing: BUZZER BEATER KO! Sebastian Fundora vs. Ermal Hadribeaj | Fight Highli
+clip: Dalton Smith vs Alberto Puello -> DAZN Boxing: Smith vs. Puello | Fight Highlights
+clip: O'Shaquie Foster vs Emanuel Navarrete -> DAZN Boxing: O'SHAQUIE FOSTER DEFEATS EMANUEL NAVARRETE | FULL FIGHT HIGHLIGHTS
+clip: Canelo Álvarez vs Christian M'billi -> Ring Magazine: KING RETURNS! Canelo Alvarez vs Christian Mbilli | FIGHT HIGHLIGHTS
+clip: Jaime Munguia vs Nikita Zon -> DAZN Boxing: ALL ACTION THRILLER! | Munguia vs Zon | Highlights
+clip: Rafael Espinoza vs Ricardo Blandon -> DAZN Boxing: Rafael Espinoza vs Ricardo Blandon | HIGHLIGHTS
+clips: 11 fight(s) got an official clip
+alerts off (test run): 0 result alert(s) not sent
+cards saved: 30 (187 s)
+  2026-07-11 12:00 UTC  Boxing: Gassiev vs. Kadiru  (1 bouts)  titles WBA
+  2026-07-20 12:00 UTC  Boxing: Teraji vs. González  (2 bouts)  titles WBO
+  2026-07-25 12:00 UTC  Boxing: Kelly vs. Agyarko  (1 bouts)  titles IBF
+  2026-08-01 12:00 UTC  Boxing: Zepeda vs. Roach  (1 bouts)  titles WBC
+  2026-08-08 12:00 UTC  Boxing: McKenna vs. Oliha  (1 bouts)  titles IBF
+  2026-08-22 12:00 UTC  Boxing: Lopez vs. Romero  (1 bouts)  titles WBA
+commit 787be4cbcea22ae918486ed4d8b207280678c042
