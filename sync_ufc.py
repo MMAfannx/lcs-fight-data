@@ -4496,6 +4496,28 @@ def now_utc_weekday_is_monday_noon():
     return n.weekday() == 0 and n.hour == 12
 
 
+# ------------------------------------------------------------- ad settings
+# Safe ad settings every app version reads (meta/adConfig). After the AdMob
+# "invalid activity" suspension (Nov 11 - ~Dec 10, 2026) ads stay low: one
+# bottom banner, max 2 small ads in news, no full-screen ads, 1 tap a day then
+# 48 h without ads on that phone. Only created when missing: change it by hand
+# in the Firebase console, the bot never overwrites it.
+SAFE_AD_CONFIG = {
+    "bannerOn": True, "inlineEvery": 0, "inlineMax": 2, "endAd": False,
+    "interstitialOn": False, "interstitialGapMin": 60, "interstitialPerDay": 3,
+    "firstAdHours": 3, "maxClicksPerDay": 1, "clickCooldownHours": 48, "statsOn": True,
+}
+
+
+def ensure_ad_config(db):
+    if db is None:
+        return
+    ref = db.collection("meta").document("adConfig")
+    if not ref.get().exists:
+        ref.set(SAFE_AD_CONFIG)
+        print("Ad settings: safe meta/adConfig created")
+
+
 def run_fighters_now():
     return MODE == "fighters" or (MODE == "full" and datetime.now(timezone.utc).hour in (0, 12))
 
@@ -5051,6 +5073,10 @@ def main():
             print(f"Website top 50 failed: {type(e).__name__}")
     now_utc = datetime.now(timezone.utc)
     if MODE == "full" and db is not None:
+        try:
+            ensure_ad_config(db)
+        except Exception as e:
+            print(f"Ad settings failed: {type(e).__name__}")
         try:
             ensure_card_profiles(db)
         except Exception as e:
