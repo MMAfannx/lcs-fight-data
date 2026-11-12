@@ -1835,18 +1835,31 @@ def sync_fighters(db, with_records=False):
             count += 1
     batch.commit()
     print(f"Fighters: {written} profiles updated")
+    # Each fighter's country for the flags on event cards (same document).
+    nat_map = {}
+    for fid, d in existing.items():
+        nat = (d.get("nationality") or "").strip() or (d.get("iso") or "").strip().upper()
+        if nat:
+            nat_map[fid] = nat
     try:
-        db.collection("meta").document("fighterPhotos").set({"photos": photo_map})
-        print(f"Fighters: photo list saved ({len(photo_map)} photos)")
+        db.collection("meta").document("fighterPhotos").set({"photos": photo_map, "nats": nat_map})
+        print(f"Fighters: photo list saved ({len(photo_map)} photos, {len(nat_map)} countries)")
     except Exception as e:
         print(f"Fighters: photo list skipped: {e}")
 
 
+_NAT_MAP = {}
+
+
 def load_photo_map(db):
-    """{fighterId: photo} saved by sync_fighters; {} if missing."""
+    """{fighterId: photo} saved by sync_fighters; {} if missing. Also loads
+    each fighter's country (used by attach_photos for the flags)."""
     try:
         snap = db.collection("meta").document("fighterPhotos").get()
-        return (snap.to_dict() or {}).get("photos", {}) if snap.exists else {}
+        data = (snap.to_dict() or {}) if snap.exists else {}
+        _NAT_MAP.clear()
+        _NAT_MAP.update(data.get("nats") or {})
+        return data.get("photos", {})
     except Exception as e:
         print(f"Photo list not loaded: {e}")
         return {}
@@ -1854,14 +1867,21 @@ def load_photo_map(db):
 
 def attach_photos(fights, photo_map):
     """Puts each fighter's free photo (link + credit) on the fight, for the
-    Results tab. Fighters without a free photo get none (the app shows initials)."""
+    Results tab. Fighters without a free photo get none (the app shows initials).
+    Also each fighter's country (fighterANat / fighterBNat): with it the app
+    shows the flag without reading the fighter's whole profile (that was the
+    biggest part of the app's database reads)."""
     for f in fights:
         for side in ("A", "B"):
-            photo = photo_map.get(f.get(f"fighter{side}Id") or "")
+            fid = f.get(f"fighter{side}Id") or ""
+            photo = photo_map.get(fid)
             if photo:
                 f[f"photo{side}"] = photo
             else:
                 f.pop(f"photo{side}", None)
+            nat = _NAT_MAP.get(fid)
+            if nat and not f.get(f"fighter{side}Nat"):
+                f[f"fighter{side}Nat"] = nat
     return fights
 
 
@@ -2081,7 +2101,7 @@ def build_fighter_index(db):
     names as you type from a single read instead of a query per keystroke."""
     if db is None:
         return
-    rows = []
+    rows, legends = [], []
     for snap in db.collection("fighters").stream():
         d = snap.to_dict() or {}
         if not (d.get("active") or d.get("legend") or d.get("card")) or not d.get("name"):
@@ -2098,11 +2118,38 @@ def build_fighter_index(db):
         if d.get("arab"):
             row["arab"] = True  # green Arab tag in search results
         if photo.get("url"):
-            row["photo"] = {"url": photo["url"]}
+            # Credit + license too: the app now builds the weight-class roster
+            # from this list, and every photo needs its credit line.
+            row["photo"] = {k: photo[k] for k in ("url", "credit", "license", "page") if photo.get(k)}
         rows.append(row)
+        if d.get("legend"):
+            leg = {k: d[k] for k in ("name", "nameAr", "careerRecord", "mmaRecord", "iso", "nationality")
+                   if d.get(k)}
+            leg["id"] = snap.id
+            for k in ("active", "retired", "arab"):
+                if d.get(k):
+                    leg[k] = True
+            if row.get("photo"):
+                leg["photo"] = row["photo"]
+            leg["titles"] = [{"division": t.get("division", ""), "interim": bool(t.get("interim"))}
+                             for t in (d.get("titles") or []) if isinstance(t, dict) and t.get("division")]
+            legends.append(leg)
     rows.sort(key=lambda r: r["name"])
+    # A Firestore document holds at most 1 MB. If the list ever gets that
+    # big, leave the photos out (never a photo without its credit line).
+    if len(json.dumps(rows, ensure_ascii=False, default=str).encode()) > 900_000:
+        for r in rows:
+            r.pop("photo", None)
+        print("Fighter search index: too big, photos left out")
     db.collection("meta").document("fighterIndex").set({"fighters": rows, "updated": datetime.now(timezone.utc)})
     print(f"Fighter search index: {len(rows)} fighters")
+    # Every champion in one document for the app's Legends screen (1 read
+    # instead of one per champion).
+    legends.sort(key=lambda r: r["name"])
+    old_leg = db.collection("meta").document("legends").get()
+    if (old_leg.to_dict() or {}).get("fighters") != legends:
+        db.collection("meta").document("legends").set({"fighters": legends, "updated": datetime.now(timezone.utc)})
+        print(f"Legends list: {len(legends)} champions saved")
 
 
 def ensure_card_profiles(db, limit=25):
