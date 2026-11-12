@@ -1,0 +1,25 @@
+name: Send requested notifications
+
+# Only sends what the owner asked for in the app's admin screen
+# ("Send notification" on an article, "Send quiz notification").
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # GitHub may run it 5-20 minutes late
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: push-requests
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install firebase-admin==6.5.0
+      - run: python push_requests.py
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
