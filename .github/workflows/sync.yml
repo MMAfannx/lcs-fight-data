@@ -19,10 +19,13 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # Fight nights: one run watches the whole card live (up to ~5 h 20 min),
+    # then starts the next run itself if the event is still on.
+    timeout-minutes: 355
     concurrency: ufc-sync
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,6 +54,16 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '17 */2 * * *' && 'full' || 'fightnight') }}
           BACKFILL_FROM_YEAR: ${{ inputs.from_year || '2024' }}
+          LIVE_MINUTES: "320"
+      # Event still on when the live watch ran out of time: start the next run now.
+      - name: keep watching the event
+        if: ${{ always() && inputs.mode != 'clips_debug' }}
+        run: |
+          [ -f /tmp/still_live ] || exit 0
+          gh workflow run sync.yml --ref main -f mode=full
+          echo "Next live-watch run requested"
+        env:
+          GH_TOKEN: ${{ github.token }}
       # Website sidebar: this month's top 50 (nicknames + points) on the "site" branch.
       - name: publish website top 50
         if: ${{ inputs.mode != 'clips_debug' }}

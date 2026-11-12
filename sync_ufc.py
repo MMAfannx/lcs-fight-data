@@ -3037,6 +3037,10 @@ def bdl_fill_results(start, fights):
 
 
 LIVE_MINUTES = int(os.environ.get("LIVE_MINUTES", "50"))
+# A run that starts up to this long before the prelims already stays on and
+# waits for them (GitHub's timer often skips hours on Saturday nights).
+LIVE_LEAD = timedelta(hours=2, minutes=30)
+STILL_LIVE_FLAG = "/tmp/still_live"  # the workflow starts a new run when this exists
 _LIVE_NOW = []  # non-empty while live_watch runs: results seen now are fresh, so their time is the fight's end
 LIVE_EVERY = 60  # seconds between BALLDONTLIE checks during a live event
 
@@ -3087,6 +3091,15 @@ def live_watch(active):
                 print(f"  live watch error: {e}")
                 still.append((ref, start))
         active = still
+    if active:
+        # Time is up but the event isn't over: ask the workflow to start the
+        # next run right away (instead of waiting for GitHub's timer).
+        try:
+            with open(STILL_LIVE_FLAG, "w") as fh:
+                fh.write("1")
+        except OSError:
+            pass
+        print("Live watch: event still on, next run requested")
     print("Live watch finished")
 
 
@@ -5015,7 +5028,7 @@ def main():
         start_at = ({**old, **new}).get("start")
         if (MODE in ("full", "fightnight") and start_at and on_card
                 and not all(f.get("winner") for f in on_card)
-                and start_at - PRELIMS_BEFORE <= datetime.now(timezone.utc) <= start_at + timedelta(hours=9)):
+                and start_at - PRELIMS_BEFORE - LIVE_LEAD <= datetime.now(timezone.utc) <= start_at + timedelta(hours=9)):
             live.append((ref, start_at))  # from the prelims ('start' is the main card time)
         try:
             check_pick_reminder(ref, {**old, **new})
