@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import unicodedata
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -2911,13 +2912,48 @@ def _bdl_all(path, params):
     return out
 
 
+def _fold(name):
+    """Lowercase, accents removed ("Díaz" -> "diaz", not "daz"), letters and spaces only."""
+    name = unicodedata.normalize("NFKD", re.sub(r"\((c|ic)\)", "", name or "", flags=re.I))
+    name = "".join(ch for ch in name if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z ]", " ", name.lower())
+
+
+def _tokens(name):
+    """Name words of 3+ letters, any order ("Alateng Heili" = "Heili Alateng")."""
+    return {w for w in _fold(name).split() if len(w) >= 3}
+
+
 def _bdl_pair(a, b):
-    return "|".join(sorted([norm(a), norm(b)]))
+    return "|".join(sorted([_fold(a).replace(" ", ""), _fold(b).replace(" ", "")]))
 
 
 def _bdl_last(name):
-    parts = re.sub(r"[^a-z ]", "", (name or "").lower()).split()
+    parts = _fold(name).split()
     return parts[-1] if parts else ""
+
+
+def _same_person(x, y):
+    return bool(x and y) and (_bdl_pair(x, "") == _bdl_pair(y, "") or _bdl_last(x) == _bdl_last(y)
+                              or bool(_tokens(x) & _tokens(y)))
+
+
+def _bdl_find_bout(a, b_, by_pair, by_last, bouts):
+    """Our fight in BALLDONTLIE's list: same full names, else same last names,
+    else (only if exactly one bout fits) both fighters share a name word."""
+    bout = by_pair.get(_bdl_pair(a, b_)) or by_last.get("|".join(sorted([_bdl_last(a), _bdl_last(b_)])))
+    if bout:
+        return bout
+    ta, tb = _tokens(a), _tokens(b_)
+    if not ta or not tb:
+        return None
+    hits = []
+    for b in bouts:
+        t1 = _tokens((b.get("fighter1") or {}).get("name", ""))
+        t2 = _tokens((b.get("fighter2") or {}).get("name", ""))
+        if (ta & t1 and tb & t2) or (ta & t2 and tb & t1):
+            hits.append(b)
+    return hits[0] if len(hits) == 1 else None
 
 
 def _bdl_method(f):
@@ -2995,7 +3031,7 @@ def bdl_fill_results(start, fights):
         f = dict(f)
         if not f.get("winner"):
             a, b_ = f.get("fighterA", ""), f.get("fighterB", "")
-            bout = by_pair.get(_bdl_pair(a, b_)) or by_last.get("|".join(sorted([_bdl_last(a), _bdl_last(b_)])))
+            bout = _bdl_find_bout(a, b_, by_pair, by_last, bouts)
             status = " ".join(str(bout.get(k) or "") for k in ("status_state", "status", "status_detail",
                                                                 "status_description")).lower() if bout else ""
             if bout and re.search(r"cancel|postpon|scratch|called off|removed", status):
@@ -3015,9 +3051,10 @@ def bdl_fill_results(start, fights):
                 method = _bdl_method(bout)
                 low = method.lower()
                 if w:
-                    if norm(w) == norm(a) or _bdl_last(w) == _bdl_last(a):
+                    wa, wb = _same_person(w, a), _same_person(w, b_)
+                    if wa and not wb:
                         f["winner"] = a
-                    elif norm(w) == norm(b_) or _bdl_last(w) == _bdl_last(b_):
+                    elif wb and not wa:
                         f["winner"] = b_
                     else:
                         f["winner"] = w
