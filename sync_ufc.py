@@ -3074,6 +3074,7 @@ def bdl_fill_results(start, fights):
 
 
 LIVE_MINUTES = int(os.environ.get("LIVE_MINUTES", "50"))
+MAIN_CARD_HOURS = 4  # main card length to keep inside one run
 # A run that starts up to this long before the prelims already stays on and
 # waits for them (GitHub's timer often skips hours on Saturday nights).
 LIVE_LEAD = timedelta(hours=2, minutes=30)
@@ -3092,6 +3093,15 @@ def live_watch(active):
     print(f"Live watch: {len(active)} event(s), every {LIVE_EVERY}s for up to {LIVE_MINUTES} min")
     _LIVE_NOW.append(True)
     deadline = time.time() + LIVE_MINUTES * 60
+    # One run can't cover a whole card (GitHub stops jobs after 6 h), and the
+    # handoff to the next run leaves a ~5 min gap. Never let that gap fall in
+    # the main card: if this run would end during it, stop 15 min before the
+    # main card instead, so the next run covers the entire main card.
+    main_start = min(start for _, start in active).timestamp()
+    handoff = main_start - 15 * 60
+    if deadline < main_start + MAIN_CARD_HOURS * 3600 and time.time() < handoff - 10 * 60:
+        deadline = min(deadline, handoff)
+        print(f"Live watch: handing over to a fresh run 15 min before the main card")
     rounds = 0
     while active and time.time() + LIVE_EVERY < deadline:
         time.sleep(LIVE_EVERY)
