@@ -1246,6 +1246,9 @@ def _sent(ref, doc, key):
     return bool(doc.get(key) or _state(ref).get(key))
 
 
+CAPTAIN_LOCK_KEY = "_captain"  # pickLocks/{event}__captain: {captains: {uid: fightId}}
+
+
 def lock_picks(ref, doc):
     """When a fight begins, freeze everyone's pick for it in
     pickLocks/{event}_{fight} (only the bot can read or write there). Scoring
@@ -1278,14 +1281,25 @@ def lock_picks(ref, doc):
     except ImportError:
         query = db.collection("picks").where("eventId", "==", ref.id)
     frozen = {fid: {} for fid in todo}
+    # Captain (x2): frozen once, when the first fight of the night begins, so it
+    # can't be moved to a later fight after seeing early results.
+    freeze_captains = CAPTAIN_LOCK_KEY not in done
+    captains = {}
     for snap in query.stream():
         p = snap.to_dict() or {}
         uid, picks = p.get("uid"), p.get("picks") or {}
         for fid in todo:
             if uid and picks.get(fid):
                 frozen[fid][uid] = [picks[fid], (p.get("methods") or {}).get(fid, ""), str((p.get("rounds") or {}).get(fid, ""))]
+        cap = p.get("captain")
+        if freeze_captains and uid and isinstance(cap, str) and picks.get(cap):
+            captains[uid] = cap
     for fid, rows in frozen.items():
         db.collection("pickLocks").document(f"{ref.id}_{fid}").set({"picks": rows, "at": now})
+    if freeze_captains:
+        db.collection("pickLocks").document(f"{ref.id}_{CAPTAIN_LOCK_KEY}").set({"captains": captains, "at": now})
+        done.add(CAPTAIN_LOCK_KEY)
+        print(f"  captains frozen: {len(captains)}")
     _save_state(ref, {"picksLocked": sorted(done | set(todo))})
     print(f"  picks frozen for {len(todo)} fight(s): {sum(len(r) for r in frozen.values())} pick(s)")
 
@@ -2557,6 +2571,11 @@ def score_event(db, ref, event_id, doc):
         before = fights[k + 1] if k + 1 < len(fights) else None
         if before is not None and isinstance(before.get("endedAt"), datetime):
             began[f.get("id")] = before["endedAt"]
+    # Captains frozen when the first fight began (lock_picks). If the bot missed
+    # that moment, a captain only counts if it was set before the first fight began.
+    cap_snap = db.collection("pickLocks").document(f"{event_id}_{CAPTAIN_LOCK_KEY}").get()
+    frozen_captains = (cap_snap.to_dict() or {}).get("captains") if cap_snap.exists else None
+    first_began = min(began.values()) if began else None
     try:
         from google.cloud.firestore_v1.base_query import FieldFilter
         query = db.collection("picks").where(filter=FieldFilter("eventId", "==", event_id))
@@ -2581,7 +2600,16 @@ def score_event(db, ref, event_id, doc):
                 chosen[fight_id], methods[fight_id], rounds[fight_id] = row[0], row[1], row[2]
             else:
                 chosen.pop(fight_id, None)  # no pick when the fight began
+        if frozen_captains is not None:
+            captain = frozen_captains.get(uid)
+        else:
+            captain = pick.get("captain")
+            cap_at = pick.get("captainAt")
+            if not isinstance(captain, str) or (first_began and (not isinstance(cap_at, datetime) or cap_at >= first_began)):
+                captain = None
+        captain_hit = 0
         for fight_id, choice in chosen.items():
+            before_points = points
             winner = results.get(fight_id)
             if not winner or winner in ("Draw", "No contest"):
                 continue  # no result, or no winner to guess
@@ -2605,8 +2633,12 @@ def score_event(db, ref, event_id, doc):
                     if kind != "dec" and rnd and picked_round == rnd:
                         points += 1
                         round_hits += 1
+                if fight_id == captain:
+                    points += points - before_points  # captain: this fight counts twice
+                    captain_hit = 1
         batch.set(snap.reference, {"result": {"points": points, "correct": correct, "total": total,
-                                              "methodHits": method_hits, "roundHits": round_hits}},
+                                              "methodHits": method_hits, "roundHits": round_hits,
+                                              "captainHit": captain_hit}},
                   merge=True)
         batch.set(db.collection("scores").document(uid), {
             "points": firestore.Increment(points),
