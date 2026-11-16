@@ -2775,10 +2775,12 @@ def build_leaderboard(db):
     ranked = sorted(scores.items(), key=lambda kv: (-num(kv[1], "points"), -num(kv[1], "correct")))
     top, prev, rank, used = [], None, 0, set()
     batch, count = db.batch(), 0
-    for i, (uid, sc) in enumerate(ranked, start=1):
+    # Ranks count only players shown on the list (hidden = no name), so the
+    # list has no gaps (1, 2, 3...); a hidden player gets the place he'd have.
+    for uid, sc in ranked:
         key = (num(sc, "points"), num(sc, "correct"))
         if key != prev:  # same points and correct picks = same rank
-            rank, prev = i, key
+            rank, prev = len(top) + 1, key
         nick = clean_nickname(nicknames.get(uid, ""))
         # Up to 5000 names fit safely in one Firestore document (1 MB limit).
         if nick and nick.lower() not in used and len(top) < 5000:
@@ -2798,10 +2800,10 @@ def build_leaderboard(db):
         rows = [(uid, m) for uid, m in rows if m]
         rows.sort(key=lambda r: (-num(r[1], "points"), -num(r[1], "correct")))
         mtop, mprev, mrank, mused = [], None, 0, set()
-        for i, (uid, m) in enumerate(rows, start=1):
+        for uid, m in rows:
             k = (num(m, "points"), num(m, "correct"))
             if k != mprev:
-                mrank, mprev = i, k
+                mrank, mprev = len(mtop) + 1, k
             nick = clean_nickname(nicknames.get(uid, ""))
             if nick and nick.lower() not in mused and len(mtop) < 5000:
                 mused.add(nick.lower())
